@@ -8,19 +8,17 @@ use std::{
 use libc::pid_t;
 
 mod ptrace {
-    use std::ptr;
+    use libc::{c_uint, pid_t};
 
-    use libc::{c_int, pid_t};
-
-    const TRACEME: c_int = 0;
-    const CONT: c_int = 7;
+    const TRACEME: c_uint = 0;
+    const CONT: c_uint = 7;
 
     pub unsafe fn trace_me() {
-        libc::ptrace(TRACEME, 0, ptr::null_mut(), 0);
+        libc::ptrace(TRACEME);
     }
 
-    pub unsafe fn cont(pid: pid_t, signal: i32) {
-        libc::ptrace(CONT, pid, 1 as *mut i8, signal);
+    pub unsafe fn cont(pid: pid_t, signal: c_uint) {
+        libc::ptrace(CONT, pid, 0, signal);
     }
 }
 
@@ -74,6 +72,13 @@ impl Dbg {
 
     fn run(&mut self) -> Result<()> {
         println!("debugging pid {}", self.child);
+
+        let mut status = 0;
+        unsafe { libc::waitpid(self.child, &mut status, 0) };
+        if libc::WIFEXITED(status) {
+            eprintln!("debugee exited");
+        }
+
         Self::prompt();
         for line in io::stdin().lines() {
             let line = line?;
