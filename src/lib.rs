@@ -59,7 +59,7 @@ impl Dbg {
             if status == 0 {
                 println!("program exited");
             } else {
-                eprintln!("debugee exited with {status}");
+                eprintln!("debugee exited with status {status}");
             }
         }
         if libc::WIFSIGNALED(status) {
