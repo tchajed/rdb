@@ -1,10 +1,6 @@
-use std::{env, os::unix::prelude::CommandExt, process};
+use std::{env, process};
 
-use libc::pid_t;
-
-fn debugger(child: pid_t) {
-    println!("debugging {child}")
-}
+use rdb::{debugger, run_child};
 
 fn main() {
     let args: Vec<_> = env::args_os().collect();
@@ -12,14 +8,17 @@ fn main() {
         eprintln!("not enough arguments");
         process::exit(1);
     }
-    // split off program (debugger itself)
-    let (_, args) = args.split_at(1);
-    let (prog, args) = args.split_at(1);
-    let prog = &prog[0];
+    // first argument is debugger itself
+    let prog = &args[1];
+    let args = &args[2..];
 
     let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        eprintln!("could not fork");
+        process::exit(2);
+    }
     if pid == 0 {
-        let err = process::Command::new(prog).args(args).exec();
+        let err = run_child(prog, args);
         eprintln!("could not execute program: {err}");
         process::exit(2);
     } else {
