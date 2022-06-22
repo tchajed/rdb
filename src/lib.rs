@@ -22,6 +22,26 @@ mod ptrace {
     }
 }
 
+enum WaitStatus {
+    Exited(u8),
+    Signaled(u32),
+    Stopped(u32),
+}
+
+impl From<libc::c_int> for WaitStatus {
+    fn from(stat_val: libc::c_int) -> Self {
+        if libc::WIFEXITED(stat_val) {
+            WaitStatus::Exited(libc::WEXITSTATUS(stat_val) as u8)
+        } else if libc::WIFSIGNALED(stat_val) {
+            WaitStatus::Signaled(libc::WTERMSIG(stat_val) as u32)
+        } else if libc::WIFSTOPPED(stat_val) {
+            WaitStatus::Stopped(libc::WSTOPSIG(stat_val) as u32)
+        } else {
+            panic!("unexpected wait status");
+        }
+    }
+}
+
 struct Dbg {
     child: pid_t,
 }
@@ -29,6 +49,12 @@ struct Dbg {
 impl Dbg {
     fn new(child: pid_t) -> Self {
         Dbg { child }
+    }
+
+    fn wait(&self) -> WaitStatus {
+        let mut status = 0;
+        unsafe { libc::waitpid(self.child, &mut status, 0) };
+        return WaitStatus::from(status);
     }
 
     fn handle_command(&mut self, line: String) {
@@ -50,18 +76,15 @@ impl Dbg {
     fn continue_execution(&self) {
         unsafe { ptrace::cont(self.child, 0) };
 
-        let mut status = 0;
-        unsafe { libc::waitpid(self.child, &mut status, 0) };
-        if libc::WIFEXITED(status) {
-            let status = libc::WEXITSTATUS(status);
-            if status == 0 {
-                println!("program exited");
-            } else {
-                eprintln!("debugee exited with status {status}");
+        match self.wait() {
+            WaitStatus::Exited(status) => {
+                if status == 0 {
+                    println!("program exited");
+                } else {
+                    eprintln!("debugee exited with status {status}");
+                }
             }
-        }
-        if libc::WIFSIGNALED(status) {
-            println!("child was signalled");
+            _ => {}
         }
     }
 
@@ -73,10 +96,11 @@ impl Dbg {
     fn run(&mut self) -> Result<()> {
         println!("debugging pid {}", self.child);
 
-        let mut status = 0;
-        unsafe { libc::waitpid(self.child, &mut status, 0) };
-        if libc::WIFEXITED(status) {
-            eprintln!("debugee exited");
+        match self.wait() {
+            WaitStatus::Exited(_) => {
+                eprintln!("debugee exited");
+            }
+            _ => {}
         }
 
         Self::prompt();
