@@ -5,12 +5,16 @@ use std::{
     process::{self, Stdio},
 };
 
+use std::collections::HashMap;
+
 use libc::pid_t;
 
 mod ptrace {
     use libc::{c_uint, pid_t};
 
     const TRACEME: c_uint = 0;
+    const PEEKDATA: c_uint = 2;
+    const POKEDATA: c_uint = 5;
     const CONT: c_uint = 7;
 
     pub unsafe fn trace_me() {
@@ -20,8 +24,17 @@ mod ptrace {
     pub unsafe fn cont(pid: pid_t, signal: c_uint) {
         libc::ptrace(CONT, pid, 0, signal);
     }
+
+    pub unsafe fn peekdata(pid: pid_t, addr: u64) -> u64 {
+        libc::ptrace(PEEKDATA, pid, addr) as u64
+    }
+
+    pub unsafe fn pokedata(pid: pid_t, addr: u64, data: u64) {
+        libc::ptrace(POKEDATA, pid, addr, data);
+    }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum WaitStatus {
     Exited(u8),
     Signaled(u32),
@@ -42,19 +55,66 @@ impl From<libc::c_int> for WaitStatus {
     }
 }
 
+fn wait(pid: pid_t) -> WaitStatus {
+    let mut status = 0;
+    unsafe { libc::waitpid(pid, &mut status, 0) };
+    return WaitStatus::from(status);
+}
+
+struct Breakpoint {
+    child: pid_t,
+    addr: u64,
+    saved_data: Option<u8>,
+}
+
+impl Breakpoint {
+    // x86 int $3
+    const INT_INSTR: u8 = 0xcc;
+
+    pub fn new(child: pid_t, addr: u64) -> Self {
+        Self {
+            child,
+            addr,
+            saved_data: None,
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.saved_data.is_some()
+    }
+
+    pub fn enable(&mut self) {
+        assert!(!self.enabled(), "breakpoint is already enabled");
+        let old_data = unsafe { ptrace::peekdata(self.child, self.addr) };
+        let saved = (old_data & 0xff) as u8;
+        self.saved_data = Some(saved);
+        let new_data = (old_data & (!0xff)) | (Self::INT_INSTR as u64);
+        unsafe { ptrace::pokedata(self.child, self.addr, new_data) };
+    }
+
+    pub fn disable(&mut self) {
+        assert!(self.enabled(), "breakpoint is not enabled");
+        let old_data = unsafe { ptrace::peekdata(self.child, self.addr) };
+        let new_data = (old_data & (!0xff)) | (self.saved_data.unwrap() as u64);
+        unsafe { ptrace::pokedata(self.child, self.addr, new_data) };
+    }
+}
+
 struct Dbg {
     child: pid_t,
+    breakpoints: HashMap<u64, Breakpoint>,
 }
 
 impl Dbg {
     fn new(child: pid_t) -> Self {
-        Dbg { child }
+        Self {
+            child,
+            breakpoints: HashMap::new(),
+        }
     }
 
     fn wait(&self) -> WaitStatus {
-        let mut status = 0;
-        unsafe { libc::waitpid(self.child, &mut status, 0) };
-        return WaitStatus::from(status);
+        wait(self.child)
     }
 
     fn handle_command(&mut self, line: String) {
