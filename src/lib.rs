@@ -131,6 +131,22 @@ impl Dbg {
             }
             self.continue_execution()
         }
+        if cmd == &"break" {
+            if args.len() != 1 {
+                eprintln!("invalid args");
+                return;
+            }
+            let addr = u64::from_str_radix(args[0], 16).unwrap();
+            self.set_breakpoint_at_address(addr);
+        }
+        if cmd == &"disable" {
+            if args.len() != 1 {
+                eprintln!("invalid args");
+                return;
+            }
+            let addr = u64::from_str_radix(args[0], 16).unwrap();
+            self.disable_breakpoint_at_address(addr);
+        }
     }
 
     fn continue_execution(&self) {
@@ -145,6 +161,26 @@ impl Dbg {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn set_breakpoint_at_address(&mut self, addr: u64) {
+        if self.breakpoints.contains_key(&addr) {
+            eprintln!("already have a breakpoint at 0x{:x}", addr);
+            return;
+        }
+
+        let mut breakpoint = Breakpoint::new(self.child, addr);
+        breakpoint.enable();
+        self.breakpoints.insert(addr, breakpoint);
+    }
+
+    fn disable_breakpoint_at_address(&mut self, addr: u64) {
+        match self.breakpoints.remove(&addr) {
+            None => {}
+            Some(mut bp) => {
+                bp.disable();
+            }
         }
     }
 
@@ -178,6 +214,7 @@ pub fn debugger(child: pid_t) -> Result<()> {
 }
 
 pub fn run_child(prog: &OsStr, args: &[OsString]) -> Error {
+    unsafe { libc::personality(libc::ADDR_NO_RANDOMIZE as u64) };
     unsafe { ptrace::trace_me() }
     process::Command::new(prog)
         .args(args)
