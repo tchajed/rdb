@@ -68,10 +68,8 @@ impl Dbg {
 
     fn parse_line(line: &str) -> (&str, Vec<&str>) {
         let parts: Vec<_> = line.split(' ').collect();
-        match parts.split_first() {
-            Some((cmd, args)) => return (cmd, args.to_vec()),
-            None => return ("", vec![]),
-        }
+        let (cmd, args) = parts.split_first().unwrap_or((&"", &[]));
+        (cmd, args.to_vec())
     }
 
     fn handle_command(&mut self, cmd: &str, args: Vec<&str>) {
@@ -121,15 +119,12 @@ impl Dbg {
     fn continue_execution(&self) {
         unsafe { self.child.cont(0) };
 
-        match self.child.wait() {
-            WaitStatus::Exited(status) => {
-                if status == 0 {
-                    println!("program exited");
-                } else {
-                    eprintln!("debugee exited with status {status}");
-                }
+        if let WaitStatus::Exited(status) = self.child.wait() {
+            if status == 0 {
+                println!("program exited");
+            } else {
+                eprintln!("debugee exited with status {status}");
             }
-            _ => {}
         }
     }
 
@@ -156,11 +151,8 @@ impl Dbg {
     fn run(&mut self) {
         println!("debugging pid {}", self.child);
 
-        match self.child.wait() {
-            WaitStatus::Exited(_) => {
-                eprintln!("debugee exited");
-            }
-            _ => {}
+        if let WaitStatus::Exited(_) = self.child.wait() {
+            eprintln!("debugee exited");
         }
 
         let mut rl = Editor::<()>::new();

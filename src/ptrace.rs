@@ -61,6 +61,6 @@ impl Target {
     pub fn wait(&self) -> WaitStatus {
         let mut status = 0;
         unsafe { libc::waitpid(self.0, &mut status, 0) };
-        return WaitStatus::from(status);
+        status.into()
     }
 }
