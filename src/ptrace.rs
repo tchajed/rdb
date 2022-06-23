@@ -189,6 +189,12 @@ impl Target {
         Self(pid)
     }
 
+    pub fn kill(self) {
+        unsafe {
+            libc::kill(self.0, libc::SIGKILL);
+        }
+    }
+
     pub unsafe fn cont(&self, signal: c_uint) {
         libc::ptrace(CONT, self.0, 0, signal);
     }

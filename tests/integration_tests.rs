@@ -54,8 +54,7 @@ fn test_continue() {
 #[test]
 fn test_quit() {
     let out = run_rdb(&["quit"]);
-    // at least for now, quitting runs the program (when the debugger terminates)
-    assert!(out.contains("Hello, world"), "target output did not appear");
+    assert!(!out.contains("Hello, world"), "target should not have run");
 }
 
 #[test]
@@ -78,5 +77,6 @@ fn test_eof() {
     drop(stdin);
 
     // this only terminates if the debugger exits
-    wait_stdout(cmd);
+    let out = wait_stdout(cmd);
+    assert!(!out.contains("Hello"), "program should not have run");
 }

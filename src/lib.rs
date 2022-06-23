@@ -15,6 +15,9 @@ mod ptrace;
 use ptrace::{Reg, WaitStatus};
 use rustyline::{error::ReadlineError, Editor};
 
+mod cli;
+use cli::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
     target: ptrace::Target,
@@ -57,73 +60,9 @@ impl Breakpoint {
     }
 }
 
-mod cli {
-    use clap::{Parser, Subcommand};
-    use clap_num::maybe_hex;
-
-    use crate::ptrace::Reg;
-
-    fn parse_reg(s: &str) -> Result<Reg, String> {
-        s.try_into()
-    }
-
-    #[derive(Parser)]
-    #[clap(
-        subcommand_required = true,
-        disable_help_subcommand = true,
-        disable_help_flag = true
-    )]
-    pub struct Input {
-        #[clap(subcommand)]
-        pub command: Command,
-    }
-
-    #[derive(Subcommand)]
-    pub enum Command {
-        /// continue executing target
-        Continue,
-        /// set a breakpoint
-        Break {
-            #[clap(value_parser = maybe_hex::<u64>)]
-            addr: u64,
-        },
-        /// delete a breakpoint
-        Disable {
-            #[clap(value_parser = maybe_hex::<u64>)]
-            addr: u64,
-        },
-        /// interact with registers
-        #[clap(subcommand)]
-        Register(RegisterCommand),
-        /// exit debugger
-        Quit,
-        /// print help message
-        Help,
-    }
-
-    #[derive(Subcommand)]
-    pub enum RegisterCommand {
-        /// print values of all registers
-        Dump,
-        /// get register value
-        Read {
-            #[clap(value_parser = parse_reg)]
-            reg: Reg,
-        },
-        /// set register value
-        Write {
-            #[clap(value_parser = parse_reg)]
-            reg: Reg,
-            #[clap(value_parser = maybe_hex::<u64>)]
-            val: u64,
-        },
-    }
-}
-
-use cli::*;
-
 struct Dbg {
     target: ptrace::Target,
+    running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
@@ -131,6 +70,7 @@ impl Dbg {
     fn new(target: pid_t) -> Self {
         Self {
             target: ptrace::Target::new(target),
+            running: true,
             breakpoints: HashMap::new(),
         }
     }
@@ -145,14 +85,16 @@ impl Dbg {
                 RegisterCommand::Read { reg } => self.read_register(reg),
                 RegisterCommand::Write { reg, val } => self.write_register(reg, val),
             },
-            Command::Quit => return,
+            Command::Quit => {
+                return;
+            }
             Command::Help => {
                 _ = Input::command().print_long_help();
             }
         }
     }
 
-    fn continue_execution(&self) {
+    fn continue_execution(&mut self) {
         unsafe { self.target.cont(0) };
 
         match self.target.wait() {
@@ -162,6 +104,7 @@ impl Dbg {
                 } else {
                     eprintln!("debugee exited with status {status}");
                 }
+                self.running = false;
             }
             WaitStatus::Stopped { signal: s } => {
                 if s == libc::SIGTRAP {
@@ -253,6 +196,10 @@ impl Dbg {
                     break;
                 }
             }
+        }
+        if self.running || true {
+            // terminate child
+            self.target.kill();
         }
         _ = rl.save_history(".rdb.history");
     }
