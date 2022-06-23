@@ -10,7 +10,7 @@ use libc::pid_t;
 
 mod ptrace;
 
-use ptrace::WaitStatus;
+use ptrace::{Reg, WaitStatus};
 use rustyline::{error::ReadlineError, Editor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,6 +124,20 @@ impl Dbg {
                 self.dump_registers();
                 return;
             }
+            if args[0] == "read" {
+                if args.len() < 2 {
+                    eprintln!("missing args to {}", args[0]);
+                }
+                self.read_register(args[1]);
+                return;
+            }
+            if args[0] == "write" {
+                if args.len() < 3 {
+                    eprintln!("missing args to {}", args[0]);
+                }
+                self.write_register(args[1], args[2]);
+                return;
+            }
             eprintln!("invalid register command {}", args[0]);
         }
         eprintln!("unknown command {}", cmd);
@@ -173,9 +187,34 @@ impl Dbg {
 
     fn dump_registers(&self) {
         let regs = unsafe { self.target.getregs() };
+        let width = ptrace::REGS.iter().map(|r| r.name.len()).max().unwrap();
         for r in ptrace::REGS.iter() {
             let val = r.reg.get_reg(&regs);
-            println!("{:8} 0x{:016x}", r.name, val);
+            println!("{:width$} 0x{:016x}", r.name, val, width = width);
+        }
+    }
+
+    fn read_register(&self, name: &str) {
+        if let Ok(r) = Reg::try_from(name) {
+            let val = unsafe { self.target.getreg(r) };
+            println!("0x{:x}", val);
+        } else {
+            eprintln!("invalid register '{name}'");
+        }
+    }
+
+    fn write_register(&self, name: &str, val: &str) {
+        let n = match u64::from_str_radix(val, 16) {
+            Ok(n) => n,
+            Err(_) => {
+                eprintln!("invalid register value {val}");
+                return;
+            }
+        };
+        if let Ok(r) = Reg::try_from(name) {
+            unsafe { self.target.setreg(r, n) };
+        } else {
+            eprintln!("invalid register '{name}'");
         }
     }
 

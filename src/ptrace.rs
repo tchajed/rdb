@@ -244,12 +244,23 @@ impl Target {
         regs
     }
 
-    pub unsafe fn setregs(&self, regs: &user_regs_struct) {
+    pub unsafe fn getreg(&self, r: Reg) -> u64 {
+        let regs = self.getregs();
+        r.get_reg(&regs)
+    }
+
+    unsafe fn setregs(&self, regs: &user_regs_struct) {
         libc::ptrace(
             SETREGS,
             self.0,
             0, // addr is ignored
             regs as *const user_regs_struct as u64,
         );
+    }
+
+    pub unsafe fn setreg(&self, r: Reg, val: u64) {
+        let mut regs = self.getregs();
+        r.set_reg(&mut regs, val);
+        self.setregs(&regs)
     }
 }
