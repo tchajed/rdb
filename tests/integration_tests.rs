@@ -34,7 +34,7 @@ fn run_rdb(lines: &[&str]) -> String {
     let mut cmd = spawn_rdb();
 
     let mut stdin = cmd.stdin.take().expect("couldn't get stdin");
-    let input = lines.iter().map(|&x| x).collect::<Vec<_>>().join("\n");
+    let input = lines.to_vec().join("\n");
     std::thread::spawn(move || {
         stdin
             .write_all(input.as_bytes())
