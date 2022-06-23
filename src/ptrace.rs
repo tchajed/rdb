@@ -6,6 +6,7 @@ const TRACEME: c_uint = 0;
 const PEEKDATA: c_uint = 2;
 const POKEDATA: c_uint = 5;
 const CONT: c_uint = 7;
+const SINGLESTEP: c_uint = 7;
 const GETREGS: c_uint = 12;
 const SETREGS: c_uint = 13;
 
@@ -274,5 +275,12 @@ impl Target {
         let mut regs = self.getregs();
         r.set_reg(&mut regs, val);
         self.setregs(&regs)
+    }
+
+    pub unsafe fn singlestep(&self) {
+        libc::ptrace(
+            SINGLESTEP, self.0, 0, /* ignored */
+            0, /* ignored */
+        );
     }
 }

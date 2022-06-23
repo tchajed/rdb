@@ -101,6 +101,8 @@ impl Dbg {
     }
 
     fn continue_execution(&mut self) {
+        self.step_over_breakpoint();
+
         unsafe { self.target.cont(0) };
 
         match self.target.wait() {
@@ -124,23 +126,24 @@ impl Dbg {
     }
 
     fn set_breakpoint_at_address(&mut self, addr: u64) {
-        if self.breakpoints.contains_key(&addr) {
+        let bp = self
+            .breakpoints
+            .entry(addr)
+            .or_insert_with(|| Breakpoint::new(self.target, addr));
+        if bp.enabled() {
             eprintln!("already have a breakpoint at 0x{:x}", addr);
             return;
         }
-
-        let mut breakpoint = Breakpoint::new(self.target, addr);
-        breakpoint.enable();
-        self.breakpoints.insert(addr, breakpoint);
+        bp.enable();
     }
 
     fn disable_breakpoint_at_address(&mut self, addr: u64) {
-        match self.breakpoints.remove(&addr) {
+        match self.breakpoints.get_mut(&addr) {
             None => {
                 eprintln!("no such breakpoint");
                 return;
             }
-            Some(mut bp) => {
+            Some(bp) => {
                 bp.disable();
             }
         }
@@ -162,6 +165,26 @@ impl Dbg {
 
     fn write_register(&self, r: Reg, val: u64) {
         unsafe { self.target.setreg(r, val) };
+    }
+
+    fn get_pc(&self) -> u64 {
+        unsafe { self.target.getreg(Reg::Rip) }
+    }
+
+    /// when stopped at a breakpoint, step past it
+    fn step_over_breakpoint(&mut self) {
+        let possible_bp_location = self.get_pc() - 1;
+        if let Some(bp) = self.breakpoints.get_mut(&possible_bp_location) {
+            if bp.enabled() {
+                unsafe {
+                    self.target.setreg(Reg::Rip, possible_bp_location);
+                    bp.disable();
+                    self.target.singlestep();
+                    self.target.wait();
+                    bp.enable();
+                };
+            }
+        }
     }
 
     fn run(&mut self) {
