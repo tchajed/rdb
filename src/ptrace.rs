@@ -82,13 +82,13 @@ pub enum Reg {
 }
 
 impl TryFrom<&str> for Reg {
-    type Error = ();
+    type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         REGS.iter()
             .find(|r| r.name == s)
-            .map(|r| Ok(r.reg))
-            .unwrap_or(Err(()))
+            .map(|r| r.reg)
+            .ok_or_else(|| "invalid register name".to_string())
     }
 }
 
@@ -135,8 +135,11 @@ impl Reg {
     }
 
     #[allow(dead_code)]
-    pub fn from_dwarf(dwarf_r: usize) -> Option<Self> {
-        REGS.iter().find(|r| r.dwarf_r == dwarf_r).map(|r| r.reg)
+    pub fn from_dwarf(dwarf_r: usize) -> Result<Self, String> {
+        REGS.iter()
+            .find(|r| r.dwarf_r == dwarf_r)
+            .map(|r| r.reg)
+            .ok_or_else(|| "invalid dwarf register".to_string())
     }
 }
 

@@ -61,6 +61,12 @@ mod cli {
     use clap::{Parser, Subcommand};
     use clap_num::maybe_hex;
 
+    use crate::ptrace::Reg;
+
+    fn parse_reg(s: &str) -> Result<Reg, String> {
+        s.try_into()
+    }
+
     #[derive(Parser)]
     #[clap(
         subcommand_required = true,
@@ -101,13 +107,13 @@ mod cli {
         Dump,
         /// get register value
         Read {
-            #[clap(value_parser)]
-            reg: String,
+            #[clap(value_parser = parse_reg)]
+            reg: Reg,
         },
         /// set register value
         Write {
-            #[clap(value_parser)]
-            reg: String,
+            #[clap(value_parser = parse_reg)]
+            reg: Reg,
             #[clap(value_parser = maybe_hex::<u64>)]
             val: u64,
         },
@@ -136,8 +142,8 @@ impl Dbg {
             Command::Disable { addr } => self.disable_breakpoint_at_address(addr),
             Command::Register(cmd) => match cmd {
                 RegisterCommand::Dump => self.dump_registers(),
-                RegisterCommand::Read { reg } => self.read_register(&reg),
-                RegisterCommand::Write { reg, val } => self.write_register(&reg, val),
+                RegisterCommand::Read { reg } => self.read_register(reg),
+                RegisterCommand::Write { reg, val } => self.write_register(reg, val),
             },
             Command::Quit => return,
             Command::Help => {
@@ -200,21 +206,13 @@ impl Dbg {
         }
     }
 
-    fn read_register(&self, name: &str) {
-        if let Ok(r) = Reg::try_from(name) {
-            let val = unsafe { self.target.getreg(r) };
-            println!("0x{:x}", val);
-        } else {
-            eprintln!("invalid register '{name}'");
-        }
+    fn read_register(&self, r: Reg) {
+        let val = unsafe { self.target.getreg(r) };
+        println!("0x{:x}", val);
     }
 
-    fn write_register(&self, name: &str, val: u64) {
-        if let Ok(r) = Reg::try_from(name) {
-            unsafe { self.target.setreg(r, val) };
-        } else {
-            eprintln!("invalid register '{name}'");
-        }
+    fn write_register(&self, r: Reg, val: u64) {
+        unsafe { self.target.setreg(r, val) };
     }
 
     fn run(&mut self) {

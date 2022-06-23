@@ -2,7 +2,7 @@ use std::{
     env,
     io::Write,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Child, Command, Stdio},
 };
 
 fn exe_path(name: &str) -> PathBuf {
@@ -16,17 +16,22 @@ fn exe_path(name: &str) -> PathBuf {
     bin_dir.join(name)
 }
 
-fn cmd_stdout(out: Output) -> String {
+fn wait_stdout(cmd: Child) -> String {
+    let out = cmd.wait_with_output().expect("couldn't get stdout");
     String::from_utf8(out.stdout).expect("non utf-8 output")
 }
 
-fn run_rdb(lines: &[&str]) -> String {
-    let mut cmd = Command::new(exe_path("rdb"))
+fn spawn_rdb() -> Child {
+    Command::new(exe_path("rdb"))
         .arg(exe_path("test"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("failed to launch debugger");
+        .expect("failed to launch debugger")
+}
+
+fn run_rdb(lines: &[&str]) -> String {
+    let mut cmd = spawn_rdb();
 
     let mut stdin = cmd.stdin.take().expect("couldn't get stdin");
     let input = lines.iter().map(|&x| x).collect::<Vec<_>>().join("\n");
@@ -36,8 +41,7 @@ fn run_rdb(lines: &[&str]) -> String {
             .expect("could not write to rdb");
     });
 
-    let output = cmd.wait_with_output().expect("couldn't get stdout");
-    cmd_stdout(output)
+    wait_stdout(cmd)
 }
 
 #[test]
@@ -64,4 +68,15 @@ fn test_help() {
 fn test_dump() {
     let out = run_rdb(&["register dump", "quit"]);
     assert!(out.contains("rip"));
+}
+
+#[test]
+fn test_eof() {
+    let mut cmd = spawn_rdb();
+    let stdin = cmd.stdin.take().expect("couldn't get stdin");
+    // equivalent to sending EOF (ctrl-d)
+    drop(stdin);
+
+    // this only terminates if the debugger exits
+    wait_stdout(cmd);
 }
