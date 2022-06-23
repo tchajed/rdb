@@ -226,6 +226,7 @@ impl Dbg {
         }
 
         let mut rl = Editor::<()>::new();
+        _ = rl.load_history(".rdb.history");
 
         loop {
             let readline = rl.readline("rdb> ");
@@ -246,6 +247,7 @@ impl Dbg {
                 }
             }
         }
+        _ = rl.save_history(".rdb.history");
     }
 }
 
