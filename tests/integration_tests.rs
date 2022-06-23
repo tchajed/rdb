@@ -57,7 +57,7 @@ fn test_quit() {
 #[test]
 fn test_help() {
     let out = run_rdb(&["help", "quit"]);
-    assert!(out.contains("supported commands:"));
+    assert!(out.contains("SUBCOMMANDS:"));
 }
 
 #[test]

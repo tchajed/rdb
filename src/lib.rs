@@ -1,3 +1,4 @@
+#![allow(clippy::needless_return)]
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
@@ -6,6 +7,7 @@ use std::{
     process::{self, Stdio},
 };
 
+use clap::{IntoApp, Parser};
 use libc::pid_t;
 
 mod ptrace;
@@ -55,6 +57,65 @@ impl Breakpoint {
     }
 }
 
+mod cli {
+    use clap::{Parser, Subcommand};
+    use clap_num::maybe_hex;
+
+    #[derive(Parser)]
+    #[clap(
+        subcommand_required = true,
+        disable_help_subcommand = true,
+        disable_help_flag = true
+    )]
+    pub struct Input {
+        #[clap(subcommand)]
+        pub command: Command,
+    }
+
+    #[derive(Subcommand)]
+    pub enum Command {
+        /// continue executing target
+        Continue,
+        /// set a breakpoint
+        Break {
+            #[clap(value_parser = maybe_hex::<u64>)]
+            addr: u64,
+        },
+        /// delete a breakpoint
+        Disable {
+            #[clap(value_parser = maybe_hex::<u64>)]
+            addr: u64,
+        },
+        /// interact with registers
+        #[clap(subcommand)]
+        Register(RegisterCommand),
+        /// exit debugger
+        Quit,
+        /// print help message
+        Help,
+    }
+
+    #[derive(Subcommand)]
+    pub enum RegisterCommand {
+        /// print values of all registers
+        Dump,
+        /// get register value
+        Read {
+            #[clap(value_parser)]
+            reg: String,
+        },
+        /// set register value
+        Write {
+            #[clap(value_parser)]
+            reg: String,
+            #[clap(value_parser = maybe_hex::<u64>)]
+            val: u64,
+        },
+    }
+}
+
+use cli::*;
+
 struct Dbg {
     target: ptrace::Target,
     breakpoints: HashMap<u64, Breakpoint>,
@@ -68,80 +129,21 @@ impl Dbg {
         }
     }
 
-    fn parse_line(line: &str) -> (&str, Vec<&str>) {
-        let parts: Vec<_> = line.trim_start().split(' ').collect();
-        let (cmd, args) = parts.split_first().unwrap_or((&"", &[]));
-        (cmd, args.to_vec())
-    }
-
-    fn handle_command(&mut self, cmd: &str, args: Vec<&str>) {
-        if cmd == "help" {
-            println!("supported commands:");
-            let commands = vec![
-                ("continue", "resume execution"),
-                ("break [hex_addr]", "create a breakpoint"),
-                ("disable [hex_addr]", "delete a breakpoint"),
-                ("register", "interact with registers"),
-                ("quit", "exit debugger"),
-                ("help", "list commands"),
-            ];
-            let width = commands.iter().map(|(cmd, _)| cmd.len()).max().unwrap();
-            for (cmd, desc) in commands.iter() {
-                println!("  {:1$} -- {desc}", console::style(cmd).bold(), width);
+    fn handle_command(&mut self, cmd: cli::Command) {
+        match cmd {
+            Command::Continue => self.continue_execution(),
+            Command::Break { addr } => self.set_breakpoint_at_address(addr),
+            Command::Disable { addr } => self.disable_breakpoint_at_address(addr),
+            Command::Register(cmd) => match cmd {
+                RegisterCommand::Dump => self.dump_registers(),
+                RegisterCommand::Read { reg } => self.read_register(&reg),
+                RegisterCommand::Write { reg, val } => self.write_register(&reg, val),
+            },
+            Command::Quit => return,
+            Command::Help => {
+                _ = Input::command().print_long_help();
             }
-            return;
         }
-        if cmd == "continue" || cmd == "c" {
-            if !args.is_empty() {
-                eprintln!("unexpected arguments to continue");
-                return;
-            }
-            self.continue_execution();
-            return;
-        }
-        if cmd == "break" {
-            if args.len() != 1 {
-                eprintln!("invalid args");
-                return;
-            }
-            let addr = u64::from_str_radix(args[0], 16).unwrap();
-            self.set_breakpoint_at_address(addr);
-            return;
-        }
-        if cmd == "disable" {
-            if args.len() != 1 {
-                eprintln!("invalid args");
-                return;
-            }
-            let addr = u64::from_str_radix(args[0], 16).unwrap();
-            self.disable_breakpoint_at_address(addr);
-            return;
-        }
-        if cmd == "register" {
-            if args.is_empty() {
-                eprintln!("missing args to register");
-            }
-            if args[0] == "dump" {
-                self.dump_registers();
-                return;
-            }
-            if args[0] == "read" {
-                if args.len() < 2 {
-                    eprintln!("missing args to {}", args[0]);
-                }
-                self.read_register(args[1]);
-                return;
-            }
-            if args[0] == "write" {
-                if args.len() < 3 {
-                    eprintln!("missing args to {}", args[0]);
-                }
-                self.write_register(args[1], args[2]);
-                return;
-            }
-            eprintln!("invalid register command {}", args[0]);
-        }
-        eprintln!("unknown command {}", cmd);
     }
 
     fn continue_execution(&self) {
@@ -179,7 +181,10 @@ impl Dbg {
 
     fn disable_breakpoint_at_address(&mut self, addr: u64) {
         match self.breakpoints.remove(&addr) {
-            None => {}
+            None => {
+                eprintln!("no such breakpoint");
+                return;
+            }
             Some(mut bp) => {
                 bp.disable();
             }
@@ -204,16 +209,9 @@ impl Dbg {
         }
     }
 
-    fn write_register(&self, name: &str, val: &str) {
-        let n = match u64::from_str_radix(val, 16) {
-            Ok(n) => n,
-            Err(_) => {
-                eprintln!("invalid register value {val}");
-                return;
-            }
-        };
+    fn write_register(&self, name: &str, val: u64) {
         if let Ok(r) = Reg::try_from(name) {
-            unsafe { self.target.setreg(r, n) };
+            unsafe { self.target.setreg(r, val) };
         } else {
             eprintln!("invalid register '{name}'");
         }
@@ -237,11 +235,18 @@ impl Dbg {
                         continue;
                     }
                     rl.add_history_entry(line.as_str());
-                    let (cmd, args) = Self::parse_line(&line);
-                    if cmd == "quit" || cmd == "q" {
-                        break;
+                    let args =
+                        Input::try_parse_from(["rdb"].iter().copied().chain(line.split(' ')));
+                    match args {
+                        Ok(Input { command: cmd }) => match cmd {
+                            Command::Quit => break,
+                            _ => self.handle_command(cmd),
+                        },
+                        Err(err) => {
+                            eprintln!("{}", err);
+                            continue;
+                        }
                     }
-                    self.handle_command(cmd, args)
                 }
                 Err(ReadlineError::Interrupted) => {}
                 Err(ReadlineError::Eof) => break,
