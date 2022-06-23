@@ -85,12 +85,10 @@ impl TryFrom<&str> for Reg {
     type Error = ();
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        for desc in REGS.iter() {
-            if desc.name == s {
-                return Ok(desc.reg);
-            }
-        }
-        Err(())
+        REGS.iter()
+            .find(|r| r.name == s)
+            .map(|r| Ok(r.reg))
+            .unwrap_or(Err(()))
     }
 }
 
@@ -134,6 +132,11 @@ impl Reg {
 
     pub fn set_reg(&self, regs: &mut user_regs_struct, val: u64) {
         *self.user_regs_ptr(regs) = val;
+    }
+
+    #[allow(dead_code)]
+    pub fn from_dwarf(dwarf_r: usize) -> Option<Self> {
+        REGS.iter().find(|r| r.dwarf_r == dwarf_r).map(|r| r.reg)
     }
 }
 
