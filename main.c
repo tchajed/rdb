@@ -1,8 +1,9 @@
-// Simple example program to debug
+// Simple example to look at DWARF info
 
-#include <stdio.h>
-
-int main() {
-  printf("running main\n");
-  return 0;
+int main()
+{
+  long a = 3;
+  long b = 2;
+  long c = a + b;
+  a = 4;
 }
