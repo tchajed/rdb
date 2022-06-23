@@ -75,6 +75,12 @@ impl Dbg {
         }
     }
 
+    fn parse_line(line: &str) -> Result<cli::Command, clap::Error> {
+        let args = ["rdb"].iter().copied();
+        let args = args.chain(line.split(' '));
+        Input::try_parse_from(args).map(|input| input.command)
+    }
+
     fn handle_command(&mut self, cmd: cli::Command) {
         match cmd {
             Command::Continue => self.continue_execution(),
@@ -176,13 +182,9 @@ impl Dbg {
                         continue;
                     }
                     rl.add_history_entry(line.as_str());
-                    let args =
-                        Input::try_parse_from(["rdb"].iter().copied().chain(line.split(' ')));
-                    match args {
-                        Ok(Input { command: cmd }) => match cmd {
-                            Command::Quit => break,
-                            _ => self.handle_command(cmd),
-                        },
+                    match Self::parse_line(&line) {
+                        Ok(Command::Quit) => break,
+                        Ok(cmd) => self.handle_command(cmd),
                         Err(err) => {
                             eprintln!("{}", err);
                             continue;
