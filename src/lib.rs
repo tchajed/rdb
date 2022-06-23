@@ -83,6 +83,7 @@ impl Dbg {
                 ("disable [hex_addr]", "delete a breakpoint"),
                 ("register", "interact with registers"),
                 ("quit", "exit debugger"),
+                ("help", "list commands"),
             ];
             let width = commands.iter().map(|(cmd, _)| cmd.len()).max().unwrap();
             for (cmd, desc) in commands.iter() {
@@ -232,6 +233,9 @@ impl Dbg {
             let readline = rl.readline("rdb> ");
             match readline {
                 Ok(line) => {
+                    if line.is_empty() {
+                        continue;
+                    }
                     rl.add_history_entry(line.as_str());
                     let (cmd, args) = Self::parse_line(&line);
                     if cmd == "quit" || cmd == "q" {
