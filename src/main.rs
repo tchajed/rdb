@@ -22,12 +22,6 @@ fn main() {
         eprintln!("could not execute program: {err}");
         process::exit(2);
     } else {
-        match debugger(pid) {
-            Ok(_) => (),
-            Err(err) => {
-                eprintln!("error within debugger: {err}");
-                process::exit(1);
-            }
-        }
+        debugger(pid)
     }
 }
