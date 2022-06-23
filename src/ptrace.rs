@@ -50,6 +50,15 @@ impl From<libc::c_int> for WaitStatus {
     }
 }
 
+impl WaitStatus {
+    pub fn is_breakpoint(&self) -> bool {
+        *self
+            == WaitStatus::Stopped {
+                signal: libc::SIGTRAP,
+            }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum Reg {

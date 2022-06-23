@@ -103,14 +103,13 @@ impl Dbg {
                 if status == 0 {
                     println!("program exited");
                 } else {
-                    eprintln!("debugee exited with status {status}");
+                    eprintln!("program exited with status {status}");
                 }
                 self.running = false;
             }
+            s if s.is_breakpoint() => println!("stopped at breakpoint"),
             WaitStatus::Stopped { signal: s } => {
-                if s == libc::SIGTRAP {
-                    println!("stopped at breakpoint");
-                } else if s == libc::SIGSEGV {
+                if s == libc::SIGSEGV {
                     eprintln!("SIGSEGV in target");
                 }
             }
@@ -184,7 +183,7 @@ impl Dbg {
         println!("debugging pid {}", self.target);
 
         if let WaitStatus::Exited { .. } = self.target.wait() {
-            eprintln!("debugee exited");
+            eprintln!("target exited before start");
         }
 
         let mut rl = Editor::<()>::new();

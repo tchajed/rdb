@@ -9,7 +9,8 @@ The main dependencies used are the libc crate to interact with the kernel using
 [rustyline](https://crates.io/crates/rustyline/) to make the command-line input
 nicer to use, and clap to simplify parsing commands and arguments.
 
-Here's an interesting session with the debugger:
+Here's an interesting session with the debugger, running a simple "Hello, world"
+program ([test.rs](src/bin/test.rs)):
 
 ```
 $ cargo build
@@ -27,3 +28,7 @@ rdb> continue
 program exited
 rdb> quit
 ```
+
+The first breakpoint is just after `println!("Hello, world")`, so we see the
+program print. The `register write rip` command rewinds the instruction
+pointer, which causes the print to run again and reach the same breakpoint as before.
