@@ -50,6 +50,7 @@ impl From<libc::c_int> for WaitStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(non_camel_case_types)]
 pub enum Reg {
     Rax,
     Rbx,
@@ -78,6 +79,19 @@ pub enum Reg {
     Ss,
     Ds,
     Es,
+}
+
+impl TryFrom<&str> for Reg {
+    type Error = ();
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        for desc in REGS.iter() {
+            if desc.name == s {
+                return Ok(desc.reg);
+            }
+        }
+        Err(())
+    }
 }
 
 impl Reg {
@@ -114,7 +128,7 @@ impl Reg {
     }
 
     pub fn get_reg(&self, regs: &user_regs_struct) -> u64 {
-        let mut regs = regs.clone();
+        let mut regs = *regs;
         *self.user_regs_ptr(&mut regs)
     }
 
