@@ -197,7 +197,7 @@ impl Dbg {
                 }
             }
         }
-        if self.running || true {
+        if self.running {
             // terminate child
             self.target.kill();
         }
