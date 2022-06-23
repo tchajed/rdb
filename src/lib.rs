@@ -15,18 +15,19 @@ use rustyline::{error::ReadlineError, Editor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
-    child: ptrace::Target,
+    target: ptrace::Target,
     addr: u64,
     saved_data: Option<u8>,
 }
 
 impl Breakpoint {
     // x86 int $3
-    const INT_INSTR: u8 = 0xcc;
+    // https://www.felixcloutier.com/x86/intn:into:int3:int1
+    const INT3_INSTR: u8 = 0xcc;
 
-    pub fn new(child: ptrace::Target, addr: u64) -> Self {
+    pub fn new(target: ptrace::Target, addr: u64) -> Self {
         Self {
-            child,
+            target,
             addr,
             saved_data: None,
         }
@@ -38,30 +39,33 @@ impl Breakpoint {
 
     pub fn enable(&mut self) {
         assert!(!self.enabled(), "breakpoint is already enabled");
-        let old_data = unsafe { self.child.peekdata(self.addr) };
+        let old_data = unsafe { self.target.peekdata(self.addr) };
+        println!("saving {:x}", old_data);
         let saved = (old_data & 0xff) as u8;
         self.saved_data = Some(saved);
-        let new_data = (old_data & (!0xff)) | (Self::INT_INSTR as u64);
-        unsafe { self.child.pokedata(self.addr, new_data) };
+        let new_data = (old_data & (!0xffu64)) | (Self::INT3_INSTR as u64);
+        unsafe { self.target.pokedata(self.addr, new_data) };
     }
 
     pub fn disable(&mut self) {
         assert!(self.enabled(), "breakpoint is not enabled");
-        let old_data = unsafe { self.child.peekdata(self.addr) };
-        let new_data = (old_data & (!0xff)) | (self.saved_data.unwrap() as u64);
-        unsafe { self.child.pokedata(self.addr, new_data) };
+        let old_data = unsafe { self.target.peekdata(self.addr) };
+        let new_data = (old_data & (!0xffu64)) | (self.saved_data.unwrap() as u64);
+        println!("restoring {:x}", new_data);
+        unsafe { self.target.pokedata(self.addr, new_data) };
+        self.saved_data = None;
     }
 }
 
 struct Dbg {
-    child: ptrace::Target,
+    target: ptrace::Target,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
 impl Dbg {
-    fn new(child: pid_t) -> Self {
+    fn new(target: pid_t) -> Self {
         Self {
-            child: ptrace::Target::new(child),
+            target: ptrace::Target::new(target),
             breakpoints: HashMap::new(),
         }
     }
@@ -117,14 +121,24 @@ impl Dbg {
     }
 
     fn continue_execution(&self) {
-        unsafe { self.child.cont(0) };
+        unsafe { self.target.cont(0) };
 
-        if let WaitStatus::Exited(status) = self.child.wait() {
-            if status == 0 {
-                println!("program exited");
-            } else {
-                eprintln!("debugee exited with status {status}");
+        match self.target.wait() {
+            WaitStatus::Exited { status } => {
+                if status == 0 {
+                    println!("program exited");
+                } else {
+                    eprintln!("debugee exited with status {status}");
+                }
             }
+            WaitStatus::Stopped { signal: s } => {
+                if s == libc::SIGTRAP {
+                    println!("stopped at breakpoint");
+                } else if s == libc::SIGSEGV {
+                    eprintln!("SIGSEGV in target");
+                }
+            }
+            _ => {}
         }
     }
 
@@ -134,7 +148,7 @@ impl Dbg {
             return;
         }
 
-        let mut breakpoint = Breakpoint::new(self.child, addr);
+        let mut breakpoint = Breakpoint::new(self.target, addr);
         breakpoint.enable();
         self.breakpoints.insert(addr, breakpoint);
     }
@@ -149,9 +163,9 @@ impl Dbg {
     }
 
     fn run(&mut self) {
-        println!("debugging pid {}", self.child);
+        println!("debugging pid {}", self.target);
 
-        if let WaitStatus::Exited(_) = self.child.wait() {
+        if let WaitStatus::Exited { .. } = self.target.wait() {
             eprintln!("debugee exited");
         }
 
@@ -179,11 +193,11 @@ impl Dbg {
     }
 }
 
-pub fn debugger(child: pid_t) {
-    Dbg::new(child).run()
+pub fn debugger(target: pid_t) {
+    Dbg::new(target).run()
 }
 
-pub fn run_child(prog: &OsStr, args: &[OsString]) -> io::Error {
+pub fn run_target(prog: &OsStr, args: &[OsString]) -> io::Error {
     unsafe { libc::personality(libc::ADDR_NO_RANDOMIZE as u64) };
     unsafe { ptrace::trace_me() }
     process::Command::new(prog)

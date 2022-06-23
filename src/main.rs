@@ -1,6 +1,6 @@
 use std::{env, process};
 
-use rdb::{debugger, run_child};
+use rdb::{debugger, run_target};
 
 fn main() {
     let args: Vec<_> = env::args_os().collect();
@@ -18,7 +18,7 @@ fn main() {
         process::exit(2);
     }
     if pid == 0 {
-        let err = run_child(prog, args);
+        let err = run_target(prog, args);
         eprintln!("could not execute program: {err}");
         process::exit(2);
     } else {
