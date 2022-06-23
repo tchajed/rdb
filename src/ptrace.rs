@@ -138,17 +138,17 @@ impl Reg {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct RegDescriptor {
-    reg: Reg,
-    dwarf_r: usize,
-    name: &'static str,
+pub struct RegDescriptor {
+    pub reg: Reg,
+    pub dwarf_r: usize,
+    pub name: &'static str,
 }
 
 const fn desc(reg: Reg, dwarf_r: usize, name: &'static str) -> RegDescriptor {
     RegDescriptor { reg, dwarf_r, name }
 }
 
-const REGS: [RegDescriptor; 27] = [
+pub const REGS: [RegDescriptor; 27] = [
     desc(Reg::R15, 5, "r15"),
     desc(Reg::R14, 4, "r14"),
     desc(Reg::R13, 3, "r13"),

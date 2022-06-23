@@ -40,7 +40,6 @@ impl Breakpoint {
     pub fn enable(&mut self) {
         assert!(!self.enabled(), "breakpoint is already enabled");
         let old_data = unsafe { self.target.peekdata(self.addr) };
-        println!("saving {:x}", old_data);
         let saved = (old_data & 0xff) as u8;
         self.saved_data = Some(saved);
         let new_data = (old_data & (!0xffu64)) | (Self::INT3_INSTR as u64);
@@ -51,7 +50,6 @@ impl Breakpoint {
         assert!(self.enabled(), "breakpoint is not enabled");
         let old_data = unsafe { self.target.peekdata(self.addr) };
         let new_data = (old_data & (!0xffu64)) | (self.saved_data.unwrap() as u64);
-        println!("restoring {:x}", new_data);
         unsafe { self.target.pokedata(self.addr, new_data) };
         self.saved_data = None;
     }
@@ -71,7 +69,7 @@ impl Dbg {
     }
 
     fn parse_line(line: &str) -> (&str, Vec<&str>) {
-        let parts: Vec<_> = line.split(' ').collect();
+        let parts: Vec<_> = line.trim_start().split(' ').collect();
         let (cmd, args) = parts.split_first().unwrap_or((&"", &[]));
         (cmd, args.to_vec())
     }
@@ -83,6 +81,7 @@ impl Dbg {
                 ("continue", "resume execution"),
                 ("break [hex_addr]", "create a breakpoint"),
                 ("disable [hex_addr]", "delete a breakpoint"),
+                ("register", "interact with registers"),
                 ("quit", "exit debugger"),
             ];
             let width = commands.iter().map(|(cmd, _)| cmd.len()).max().unwrap();
@@ -116,6 +115,16 @@ impl Dbg {
             let addr = u64::from_str_radix(args[0], 16).unwrap();
             self.disable_breakpoint_at_address(addr);
             return;
+        }
+        if cmd == "register" {
+            if args.len() == 0 {
+                eprintln!("missing args to register");
+            }
+            if args[0] == "dump" {
+                self.dump_registers();
+                return;
+            }
+            eprintln!("invalid register command {}", args[0]);
         }
         eprintln!("unknown command {}", cmd);
     }
@@ -159,6 +168,14 @@ impl Dbg {
             Some(mut bp) => {
                 bp.disable();
             }
+        }
+    }
+
+    fn dump_registers(&self) {
+        let regs = unsafe { self.target.getregs() };
+        for r in ptrace::REGS.iter() {
+            let val = r.reg.get_reg(&regs);
+            println!("{:8} 0x{:016x}", r.name, val);
         }
     }
 
