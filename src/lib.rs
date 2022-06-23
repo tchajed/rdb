@@ -7,7 +7,6 @@ use std::{
     process::{self, Stdio},
 };
 
-use clap::{IntoApp, Parser};
 use libc::pid_t;
 
 mod ptrace;
@@ -16,7 +15,7 @@ use ptrace::{Reg, WaitStatus};
 use rustyline::{error::ReadlineError, Editor};
 
 mod cli;
-use cli::*;
+use cli::{Command, RegisterCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -75,12 +74,6 @@ impl Dbg {
         }
     }
 
-    fn parse_line(line: &str) -> Result<cli::Command, clap::Error> {
-        let args = ["rdb"].iter().copied();
-        let args = args.chain(line.split(' '));
-        Input::try_parse_from(args).map(|input| input.command)
-    }
-
     fn handle_command(&mut self, cmd: cli::Command) {
         match cmd {
             Command::Continue => self.continue_execution(),
@@ -95,7 +88,7 @@ impl Dbg {
                 return;
             }
             Command::Help => {
-                _ = Input::command().print_long_help();
+                cli::print_help();
             }
         }
     }
@@ -205,7 +198,7 @@ impl Dbg {
                         continue;
                     }
                     rl.add_history_entry(line.as_str());
-                    match Self::parse_line(&line) {
+                    match cli::parse_line(&line) {
                         Ok(Command::Quit) => break,
                         Ok(cmd) => self.handle_command(cmd),
                         Err(err) => {

@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{IntoApp, Parser, Subcommand};
 use clap_num::maybe_hex;
 
 use crate::ptrace::Reg;
@@ -13,7 +13,7 @@ fn parse_reg(s: &str) -> Result<Reg, String> {
     disable_help_subcommand = true,
     disable_help_flag = true
 )]
-pub struct Input {
+struct Input {
     #[clap(subcommand)]
     pub command: Command,
 }
@@ -57,4 +57,14 @@ pub enum RegisterCommand {
         #[clap(value_parser = maybe_hex::<u64>)]
         val: u64,
     },
+}
+
+pub fn parse_line(line: &str) -> Result<Command, clap::Error> {
+    let args = ["rdb"].iter().copied();
+    let args = args.chain(line.split(' '));
+    Input::try_parse_from(args).map(|input| input.command)
+}
+
+pub fn print_help() {
+    _ = Input::command().print_long_help();
 }
