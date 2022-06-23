@@ -242,7 +242,7 @@ impl Target {
             GETREGS,
             self.0,
             0, // addr is ignored
-            &mut regs as *mut user_regs_struct as u64,
+            &mut regs as *mut user_regs_struct as usize,
         );
         regs
     }
@@ -257,7 +257,7 @@ impl Target {
             SETREGS,
             self.0,
             0, // addr is ignored
-            regs as *const user_regs_struct as u64,
+            regs as *const user_regs_struct as usize,
         );
     }
 

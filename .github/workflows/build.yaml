@@ -26,4 +26,5 @@ jobs:
           rustup component add clippy
       - uses: Swatinem/rust-cache@v1
       - run: cargo build --verbose
+      - run: cargo test --verbose
       - run: cargo clippy --no-deps -- -D clippy::all
