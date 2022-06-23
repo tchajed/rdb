@@ -117,7 +117,7 @@ impl Dbg {
             return;
         }
         if cmd == "register" {
-            if args.len() == 0 {
+            if args.is_empty() {
                 eprintln!("missing args to register");
             }
             if args[0] == "dump" {
