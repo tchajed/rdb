@@ -92,6 +92,7 @@ impl Dbg {
                 if off == 0 {
                     let start = captures.name("start").unwrap().as_str();
                     let start = u64::from_str_radix(start, 16).expect("could not parse start");
+                    println!("load address: {:x}", start);
                     return Ok(start);
                 }
             }
@@ -159,7 +160,7 @@ impl Dbg {
         let bp = self
             .breakpoints
             .entry(addr)
-            .or_insert_with(|| Breakpoint::new(self.target, addr));
+            .or_insert_with(|| Breakpoint::new(self.target, self.load_addr + addr));
         if bp.enabled() {
             eprintln!("already have a breakpoint at 0x{:x}", addr);
             return;
@@ -168,6 +169,7 @@ impl Dbg {
     }
 
     fn disable_breakpoint_at_address(&mut self, addr: u64) {
+        let addr = self.load_addr + addr;
         match self.breakpoints.get_mut(&addr) {
             None => {
                 eprintln!("no such breakpoint");
@@ -203,7 +205,11 @@ impl Dbg {
 
     /// when stopped at a breakpoint, step past it
     fn step_over_breakpoint(&mut self) {
-        let possible_bp_location = self.get_pc() - 1;
+        let pc = self.get_pc();
+        if pc == 0 {
+            return;
+        }
+        let possible_bp_location = pc - 1;
         if let Some(bp) = self.breakpoints.get_mut(&possible_bp_location) {
             if bp.enabled() {
                 unsafe {
