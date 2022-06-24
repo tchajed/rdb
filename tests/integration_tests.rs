@@ -85,3 +85,10 @@ fn test_eof() {
 fn test_single_stepping() {
     run_rdb(&["stepi", "stepi", "stepi", "quit"]);
 }
+
+#[test]
+fn test_step_out_main() {
+    // at the very beginning step-out should return from main
+    let out = run_rdb(&["step-out"]);
+    assert!(out.contains("program exited"));
+}
