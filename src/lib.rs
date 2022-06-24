@@ -148,7 +148,7 @@ impl Dbg {
             }
             s if s.is_breakpoint() => {
                 let bp = self.get_pc() - 1 - self.load_addr;
-                println!("stopped at breakpoint {:x}", bp);
+                println!("stopped at breakpoint 0x{:x}", bp);
             }
             WaitStatus::Stopped { signal: s } => {
                 if s == libc::SIGSEGV {

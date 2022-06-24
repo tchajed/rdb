@@ -80,3 +80,10 @@ fn test_eof() {
     let out = wait_stdout(cmd);
     assert!(!out.contains("Hello"), "program should not have run");
 }
+
+#[test]
+fn test_break() {
+    let out = run_rdb(&["break 0x7c21", "continue", "continue"]);
+    assert!(out.contains("breakpoint 0x7c21"));
+    assert!(out.contains("Hello, world"));
+}
