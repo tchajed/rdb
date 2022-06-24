@@ -3,14 +3,14 @@ use std::{env, process};
 use rdb::{debugger, run_target};
 
 fn main() {
-    let args: Vec<_> = env::args_os().collect();
-    if args.len() < 2 {
+    // skip the debugger in the arguments
+    let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.is_empty() {
         eprintln!("not enough arguments");
         process::exit(1);
     }
-    // first argument is debugger itself
-    let prog = &args[1];
-    let args = &args[2..];
+    let prog = &args[0];
+    let args = &args[1..];
 
     let pid = unsafe { libc::fork() };
     if pid < 0 {
