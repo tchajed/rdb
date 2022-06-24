@@ -206,7 +206,7 @@ impl Target {
     }
 
     pub unsafe fn cont(&self, signal: c_uint) {
-        libc::ptrace(CONT, self.0, 0, signal);
+        libc::ptrace(CONT, self.0, 0u64, signal);
     }
 
     pub unsafe fn peekdata(&self, addr: u64) -> u64 {
@@ -260,7 +260,7 @@ impl Target {
         libc::ptrace(
             GETREGS,
             self.0,
-            0, // addr is ignored
+            0u64, // addr is ignored
             &mut regs as *mut user_regs_struct as usize,
         );
         regs
@@ -275,7 +275,7 @@ impl Target {
         libc::ptrace(
             SETREGS,
             self.0,
-            0, // addr is ignored
+            0u64, // addr is ignored
             regs as *const user_regs_struct as usize,
         );
     }
@@ -288,8 +288,8 @@ impl Target {
 
     pub unsafe fn singlestep(&self) {
         libc::ptrace(
-            SINGLESTEP, self.0, 0, /* ignored */
-            0, /* ignored */
+            SINGLESTEP, self.0, 0u64, /* ignored */
+            0u64, /* ignored */
         );
     }
 }

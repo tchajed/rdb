@@ -68,6 +68,7 @@ impl Breakpoint {
 struct Dbg {
     target: ptrace::Target,
     load_addr: u64,
+    #[allow(dead_code)]
     info: DbgInfo,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
