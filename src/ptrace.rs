@@ -11,8 +11,8 @@ const GETREGS: c_uint = 12;
 const SETREGS: c_uint = 13;
 const GETSIGINFO: c_uint = 0x4202;
 
-pub unsafe fn trace_me() {
-    libc::ptrace(TRACEME);
+pub fn trace_me() {
+    unsafe { libc::ptrace(TRACEME) };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,16 +197,18 @@ impl Target {
         }
     }
 
-    pub unsafe fn cont(&self, signal: c_uint) {
-        libc::ptrace(CONT, self.0, 0u64, signal);
+    pub fn cont(&self, signal: c_uint) {
+        unsafe { libc::ptrace(CONT, self.0, 0u64, signal) };
     }
 
-    pub unsafe fn peekdata(&self, addr: u64) -> u64 {
-        libc::ptrace(PEEKDATA, self.0, addr) as u64
+    pub fn peekdata(&self, addr: u64) -> u64 {
+        unsafe { libc::ptrace(PEEKDATA, self.0, addr) as u64 }
     }
 
-    pub unsafe fn pokedata(&self, addr: u64, data: u64) {
-        libc::ptrace(POKEDATA, self.0, addr, data);
+    pub fn pokedata(&self, addr: u64, data: u64) {
+        unsafe {
+            libc::ptrace(POKEDATA, self.0, addr, data);
+        }
     }
 
     pub fn wait(&self) -> WaitStatus {
@@ -247,56 +249,61 @@ impl Target {
         }
     }
 
-    pub unsafe fn getregs(&self) -> user_regs_struct {
+    pub fn getregs(&self) -> user_regs_struct {
         let mut regs = Self::default_user_regs_struct();
-        libc::ptrace(
-            GETREGS,
-            self.0,
-            0u64, // addr is ignored
-            &mut regs as *mut user_regs_struct as usize,
-        );
+        let data = &mut regs as *mut user_regs_struct as usize;
+        unsafe {
+            libc::ptrace(
+                GETREGS, self.0, 0usize, // addr is ignored
+                data,
+            );
+        }
         regs
     }
 
-    pub unsafe fn getreg(&self, r: Reg) -> u64 {
+    pub fn getreg(&self, r: Reg) -> u64 {
         let regs = self.getregs();
         r.get_reg(&regs)
     }
 
-    unsafe fn setregs(&self, regs: &user_regs_struct) {
-        libc::ptrace(
-            SETREGS,
-            self.0,
-            0u64, // addr is ignored
-            regs as *const user_regs_struct as usize,
-        );
+    fn setregs(&self, regs: &user_regs_struct) {
+        let data = regs as *const user_regs_struct as usize;
+        unsafe {
+            libc::ptrace(
+                SETREGS, self.0, 0usize, // addr is ignored
+                data,
+            );
+        }
     }
 
-    pub unsafe fn setreg(&self, r: Reg, val: u64) {
+    pub fn setreg(&self, r: Reg, val: u64) {
         let mut regs = self.getregs();
         r.set_reg(&mut regs, val);
         self.setregs(&regs)
     }
 
-    pub unsafe fn singlestep(&self) {
-        libc::ptrace(
-            SINGLESTEP, self.0, 0u64, /* ignored */
-            0u64, /* ignored */
-        );
+    pub fn singlestep(&self) {
+        unsafe {
+            libc::ptrace(
+                SINGLESTEP, self.0, 0u64, /* ignored */
+                0u64, /* ignored */
+            );
+        }
     }
 
     fn default_siginfo_t() -> libc::siginfo_t {
         unsafe { mem::transmute([0u8; 128]) }
     }
 
-    pub unsafe fn getsiginfo(&self) -> libc::siginfo_t {
+    pub fn getsiginfo(&self) -> libc::siginfo_t {
         let mut info = Self::default_siginfo_t();
-        libc::ptrace(
-            GETSIGINFO,
-            self.0,
-            0usize, // addr is ignored
-            &mut info as *mut libc::siginfo_t as usize,
-        );
+        let data = &mut info as *mut libc::siginfo_t as usize;
+        unsafe {
+            libc::ptrace(
+                GETSIGINFO, self.0, 0usize, // addr is ignored
+                data,
+            );
+        }
         info
     }
 }

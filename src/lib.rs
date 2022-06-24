@@ -52,18 +52,18 @@ impl Breakpoint {
 
     pub fn enable(&mut self) {
         assert!(!self.enabled(), "breakpoint is already enabled");
-        let old_data = unsafe { self.target.peekdata(self.addr) };
+        let old_data = self.target.peekdata(self.addr);
         let saved = (old_data & 0xff) as u8;
         self.saved_data = Some(saved);
         let new_data = (old_data & (!0xffu64)) | (Self::INT3_INSTR as u64);
-        unsafe { self.target.pokedata(self.addr, new_data) };
+        self.target.pokedata(self.addr, new_data);
     }
 
     pub fn disable(&mut self) {
         assert!(self.enabled(), "breakpoint is not enabled");
-        let old_data = unsafe { self.target.peekdata(self.addr) };
+        let old_data = self.target.peekdata(self.addr);
         let new_data = (old_data & (!0xffu64)) | (self.saved_data.unwrap() as u64);
-        unsafe { self.target.pokedata(self.addr, new_data) };
+        self.target.pokedata(self.addr, new_data);
         self.saved_data = None;
     }
 }
@@ -175,32 +175,19 @@ impl Dbg {
 
     fn continue_execution(&mut self) {
         self.step_over_breakpoint();
+        self.target.cont(0);
+        let s = self.target.wait();
 
-        unsafe { self.target.cont(0) };
-
-        #[allow(clippy::single_match)]
-        match self.target.wait() {
-            WaitStatus::Exited { status } => {
-                if status == 0 {
-                    println!("program exited");
-                } else {
-                    eprintln!("program exited with status {status}");
-                }
-                self.running = false;
+        if let WaitStatus::Exited { status } = s {
+            if status == 0 {
+                println!("program exited");
+            } else {
+                eprintln!("program exited with status {status}");
             }
-            // s if s.is_breakpoint() => {
-            //     let bp = self.get_pc() - 1 - self.load_addr;
-            //     println!("stopped at breakpoint 0x{:x}", bp);
-            // }
-            // WaitStatus::Stopped { signal: s } => {
-            //     if s == libc::SIGSEGV {
-            //         eprintln!("SIGSEGV in target");
-            //     }
-            // }
-            _ => {}
+            self.running = false;
         }
 
-        let siginfo = unsafe { self.target.getsiginfo() };
+        let siginfo = self.target.getsiginfo();
         let signo = siginfo.si_signo;
         if signo == 0 {
             // no signal
@@ -240,7 +227,7 @@ impl Dbg {
     }
 
     fn dump_registers(&self) {
-        let regs = unsafe { self.target.getregs() };
+        let regs = self.target.getregs();
         let width = ptrace::REGS.iter().map(|r| r.name.len()).max().unwrap();
         for r in ptrace::REGS.iter() {
             let val = r.reg.get_reg(&regs);
@@ -249,22 +236,20 @@ impl Dbg {
     }
 
     fn read_register(&self, r: Reg) {
-        let val = unsafe { self.target.getreg(r) };
+        let val = self.target.getreg(r);
         println!("0x{:x}", val);
     }
 
     fn write_register(&self, r: Reg, val: u64) {
-        unsafe { self.target.setreg(r, val) };
+        self.target.setreg(r, val);
     }
 
     fn get_pc(&self) -> u64 {
-        unsafe { self.target.getreg(Reg::Rip) }
+        self.target.getreg(Reg::Rip)
     }
 
     fn set_pc(&self, pc: u64) {
-        unsafe {
-            self.target.setreg(Reg::Rip, pc);
-        }
+        self.target.setreg(Reg::Rip, pc);
     }
 
     /// when stopped at a breakpoint, step past it
@@ -275,12 +260,10 @@ impl Dbg {
         }
         if let Some(bp) = self.breakpoints.get_mut(&pc) {
             if bp.enabled() {
-                unsafe {
-                    bp.disable();
-                    self.target.singlestep();
-                    self.target.wait();
-                    bp.enable();
-                };
+                bp.disable();
+                self.target.singlestep();
+                self.target.wait();
+                bp.enable();
             }
         }
     }
@@ -336,7 +319,7 @@ pub fn debugger<P: AsRef<Path>>(path: P, target: pid_t) {
 
 pub fn run_target(prog: &OsStr, args: &[OsString]) -> io::Error {
     unsafe { libc::personality(libc::ADDR_NO_RANDOMIZE as u64) };
-    unsafe { ptrace::trace_me() }
+    ptrace::trace_me();
     process::Command::new(prog)
         .args(args)
         .stdin(Stdio::null())
