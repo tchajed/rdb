@@ -192,9 +192,14 @@ impl Dbg {
         }
 
         let siginfo = unsafe { self.target.getsiginfo() };
-        if siginfo.si_signo == libc::SIGTRAP {
+        let signo = siginfo.si_signo;
+        if signo == 0 {
+            // no signal
+            return;
+        }
+        if signo == libc::SIGTRAP {
             self.handle_sigtrap(siginfo);
-        } else if siginfo.si_signo == libc::SIGSEGV {
+        } else if signo == libc::SIGSEGV {
             println!("yay segfault: {}", siginfo.si_code);
         } else {
             println!("got signal {}", siginfo.si_signo);
