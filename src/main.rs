@@ -22,6 +22,6 @@ fn main() {
         eprintln!("could not execute program: {err}");
         process::exit(2);
     } else {
-        debugger(pid)
+        debugger(prog.to_str().unwrap(), pid)
     }
 }

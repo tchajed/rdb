@@ -2,20 +2,24 @@
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
-    io,
+    fs, io,
     os::unix::process::CommandExt,
+    path::Path,
     process::{self, Stdio},
 };
 
 use libc::pid_t;
+use object::Object;
+use rustyline::{error::ReadlineError, Editor};
 
 mod ptrace;
-
 use ptrace::{Reg, WaitStatus};
-use rustyline::{error::ReadlineError, Editor};
 
 mod cli;
 use cli::{Command, RegisterCommand};
+
+mod dwarf;
+use dwarf::get_function_from_pc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -59,16 +63,18 @@ impl Breakpoint {
     }
 }
 
-struct Dbg {
+struct Dbg<'data> {
     target: ptrace::Target,
+    file: object::File<'data>,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
-impl Dbg {
-    fn new(target: pid_t) -> Self {
+impl<'data> Dbg<'data> {
+    fn new(file: object::File<'data>, target: pid_t) -> Self {
         Self {
             target: ptrace::Target::new(target),
+            file,
             running: true,
             breakpoints: HashMap::new(),
         }
@@ -182,6 +188,8 @@ impl Dbg {
     fn run(&mut self) {
         println!("debugging pid {}", self.target);
 
+        get_function_from_pc(&self.file, 0).unwrap();
+
         if let WaitStatus::Exited { .. } = self.target.wait() {
             eprintln!("target exited before start");
         }
@@ -222,8 +230,14 @@ impl Dbg {
     }
 }
 
-pub fn debugger(target: pid_t) {
-    Dbg::new(target).run()
+pub fn debugger<P: AsRef<Path>>(path: P, target: pid_t) {
+    let file = fs::File::open(&path).unwrap();
+    let mmap = unsafe { memmap::Mmap::map(&file).unwrap() };
+    let object = object::File::parse(&*mmap).unwrap();
+    if !object.is_little_endian() {
+        panic!("only handling little endian");
+    }
+    Dbg::new(object, target).run()
 }
 
 pub fn run_target(prog: &OsStr, args: &[OsString]) -> io::Error {
