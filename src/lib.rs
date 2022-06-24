@@ -83,7 +83,6 @@ fn display_code(si_code: i32) -> String {
 struct Dbg {
     target: ptrace::Target,
     load_addr: u64,
-    #[allow(dead_code)]
     info: DbgInfo,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
@@ -132,14 +131,17 @@ impl Dbg {
     fn handle_command(&mut self, cmd: cli::Command) {
         match cmd {
             Command::Continue => self.continue_execution(),
-            Command::Break { pc } => self.set_breakpoint_at_address(self.load_addr + pc),
-            Command::Disable { pc } => self.disable_breakpoint_at_address(self.load_addr + pc),
+            Command::Break { pc } => self.set_user_breakpoint(pc),
+            Command::Disable { pc } => self.disable_user_breakpoint(pc),
             Command::Register(cmd) => match cmd {
                 RegisterCommand::Dump => self.dump_registers(),
                 RegisterCommand::Read { reg } => self.read_register(reg),
                 RegisterCommand::Write { reg, val } => self.write_register(reg, val),
             },
             Command::Stepi => self.single_step(),
+            Command::StepOut => self.step_out(),
+            Command::StepIn => unimplemented!(),
+            Command::StepOver => unimplemented!(),
             Command::Quit => {
                 return;
             }
@@ -201,6 +203,12 @@ impl Dbg {
         }
     }
 
+    fn set_user_breakpoint(&mut self, pc: u64) {
+        // for now user breakpoints are not distinguished from internal ones
+        self.set_breakpoint_at_address(self.load_addr + pc);
+    }
+
+    /// internal method to add a breakpoint
     fn set_breakpoint_at_address(&mut self, addr: u64) {
         let bp = self
             .breakpoints
@@ -211,6 +219,10 @@ impl Dbg {
             return;
         }
         bp.enable();
+    }
+
+    fn disable_user_breakpoint(&mut self, pc: u64) {
+        self.disable_breakpoint_at_address(self.load_addr + pc);
     }
 
     fn disable_breakpoint_at_address(&mut self, addr: u64) {
@@ -274,6 +286,24 @@ impl Dbg {
         } else {
             self.target.singlestep();
             self.target.wait();
+        }
+    }
+
+    /// Step until the current function exits.
+    fn step_out(&mut self) {
+        let frame_pointer = self.target.getreg(Reg::Rbp);
+        let return_address = self.target.peekdata(frame_pointer + 8);
+
+        let mut internal_bp = false;
+        if !self.breakpoints.contains_key(&return_address) {
+            self.set_breakpoint_at_address(return_address);
+            internal_bp = true;
+        }
+
+        self.continue_execution();
+
+        if internal_bp {
+            self.breakpoints.remove(&return_address).unwrap().disable();
         }
     }
 

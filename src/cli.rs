@@ -37,6 +37,12 @@ pub enum Command {
     Register(RegisterCommand),
     /// step over a single instruction
     Stepi,
+    /// step out of the current function
+    StepOut,
+    /// step into the next function (?)
+    StepIn,
+    /// step over the next source line
+    StepOver,
     /// exit debugger
     Quit,
     /// print help message
