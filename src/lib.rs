@@ -92,7 +92,6 @@ impl Dbg {
                 if off == 0 {
                     let start = captures.name("start").unwrap().as_str();
                     let start = u64::from_str_radix(start, 16).expect("could not parse start");
-                    println!("load address: {:x}", start);
                     return Ok(start);
                 }
             }
@@ -100,12 +99,13 @@ impl Dbg {
         panic!("could not parse map file")
     }
 
-    fn new(file: object::File, target: pid_t) -> Self {
+    fn new(file: object::File, pid: pid_t) -> Self {
         let info = DbgInfo::new(&file).expect("could not load dwarf file");
-        // loading this now is slightly sketchy, should really wait for a signal first
-        let load_addr = Self::get_load_address(&file, target).expect("could not get load address");
+        let target = ptrace::Target::new(pid);
+        target.wait();
+        let load_addr = Self::get_load_address(&file, pid).expect("could not get load address");
         Self {
-            target: ptrace::Target::new(target),
+            target,
             load_addr,
             info,
             running: true,
@@ -209,6 +209,7 @@ impl Dbg {
         if pc == 0 {
             return;
         }
+        // subtract one to back up over int3 instruction
         let possible_bp_location = pc - 1;
         if let Some(bp) = self.breakpoints.get_mut(&possible_bp_location) {
             if bp.enabled() {
@@ -216,7 +217,10 @@ impl Dbg {
                     self.target.setreg(Reg::Rip, possible_bp_location);
                     bp.disable();
                     self.target.singlestep();
-                    self.target.wait();
+                    let s = self.target.wait();
+                    if !s.is_breakpoint() {
+                        eprintln!("confusing single step result {:?}", s);
+                    }
                     bp.enable();
                 };
             }
@@ -225,10 +229,6 @@ impl Dbg {
 
     fn run(&mut self) {
         println!("debugging pid {}", self.target);
-
-        if let WaitStatus::Exited { .. } = self.target.wait() {
-            eprintln!("target exited before start");
-        }
 
         let mut rl = Editor::<()>::new();
         _ = rl.load_history(".rdb.history");
