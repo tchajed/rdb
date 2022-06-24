@@ -73,6 +73,15 @@ const SI_KERNEL: i32 = 128;
 const TRAP_BRKPT: i32 = 1;
 const TRAP_TRACE: i32 = 2;
 
+fn display_code(si_code: i32) -> String {
+    match si_code {
+        SI_KERNEL => "SI_KERNEL".to_string(),
+        TRAP_BRKPT => "TRAP_BRKPT".to_string(),
+        TRAP_TRACE => "TRAP_TRACE".to_string(),
+        _ => format!("{}", si_code),
+    }
+}
+
 struct Dbg {
     target: ptrace::Target,
     load_addr: u64,
@@ -146,7 +155,7 @@ impl Dbg {
         if code == SI_KERNEL || code == TRAP_BRKPT {
             let pc = self.get_pc() - 1;
             self.set_pc(pc);
-            println!("hit breakpoint 0x{:x}", pc);
+            println!("hit breakpoint 0x{:x}", pc - self.load_addr);
             let offset_pc = pc - self.load_addr;
             let loc = self
                 .info
@@ -200,7 +209,7 @@ impl Dbg {
         if signo == libc::SIGTRAP {
             self.handle_sigtrap(siginfo);
         } else if signo == libc::SIGSEGV {
-            println!("yay segfault: {}", siginfo.si_code);
+            println!("yay segfault: {}", display_code(siginfo.si_code));
         } else {
             println!("got signal {}", siginfo.si_signo);
         }
