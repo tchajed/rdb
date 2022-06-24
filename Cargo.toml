@@ -8,6 +8,7 @@ default-run = "rdb"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+addr2line = "0.17.0"
 clap = { version = "3.2.6", features = ["derive"] }
 clap-num = "1.0.0"
 console = "0.15.0"
@@ -15,4 +16,5 @@ gimli = { version = "0.26.1", features = ["read"] }
 libc = "0.2.126"
 memmap = "0.7.0"
 object = "0.29.0"
+regex = "1.5.6"
 rustyline = "9.1.2"

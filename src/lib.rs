@@ -2,14 +2,16 @@
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
-    fs, io,
+    fs,
+    io::{self, BufRead},
     os::unix::process::CommandExt,
     path::Path,
     process::{self, Stdio},
 };
 
 use libc::pid_t;
-use object::Object;
+use object::{Object, ObjectKind};
+use regex::Regex;
 use rustyline::{error::ReadlineError, Editor};
 
 mod ptrace;
@@ -19,7 +21,7 @@ mod cli;
 use cli::{Command, RegisterCommand};
 
 mod dwarf;
-use dwarf::Context;
+use dwarf::DbgInfo;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -65,17 +67,54 @@ impl Breakpoint {
 
 struct Dbg {
     target: ptrace::Target,
-    dwarf: Context,
+    load_addr: u64,
+    info: DbgInfo,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
 impl Dbg {
+    fn get_load_address(file: &object::File, target: pid_t) -> Result<u64, io::Error> {
+        if file.kind() != ObjectKind::Dynamic {
+            return Ok(0);
+        }
+        let f =
+            fs::File::open(format!("/proc/{target}/maps")).expect("could not open memory mapping");
+        let f = io::BufReader::new(f);
+        let re = Regex::new(
+            r"(?P<start>[0-9a-f]*)-([0-9a-f]*) (?P<mode>[^ ]*) (?P<offset>[0-9a-f]*) ([^ ]*) ([^ ]*) *(?P<path>.*)",
+        ).unwrap();
+        for line in f.lines() {
+            let line = line?;
+            if let Some(captures) = re.captures(&line) {
+                let off = captures
+                    .name("offset")
+                    .unwrap()
+                    .as_str()
+                    .parse::<u64>()
+                    .unwrap();
+                if off == 0 {
+                    let start = captures
+                        .name("start")
+                        .unwrap()
+                        .as_str()
+                        .parse::<u64>()
+                        .unwrap();
+                    return Ok(start);
+                }
+            }
+        }
+        panic!("could not parse map file")
+    }
+
     fn new(file: object::File, target: pid_t) -> Self {
-        let dwarf = Context::new(&file).expect("could not load dwarf file");
+        let info = DbgInfo::new(&file).expect("could not load dwarf file");
+        // loading this now is slightly sketchy, should really wait for a signal first
+        let load_addr = Self::get_load_address(&file, target).expect("could not get load address");
         Self {
             target: ptrace::Target::new(target),
-            dwarf,
+            load_addr,
+            info,
             running: true,
             breakpoints: HashMap::new(),
         }

@@ -1,10 +1,7 @@
 #![allow(unused_variables)]
 use std::{borrow::Cow, ops::Range, rc::Rc};
 
-use gimli::{
-    AttributeValue, DebuggingInformationEntry, Dwarf, EndianRcSlice, EndianReader, LittleEndian,
-    Unit,
-};
+use gimli::{AttributeValue, DebuggingInformationEntry, EndianRcSlice, LittleEndian};
 use object::{File, Object, ObjectSection};
 
 type Die<'abbrev, 'unit, R> =
@@ -42,55 +39,40 @@ fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
     Ok(low_pc..high_pc)
 }
 
-fn unit_pc_range(unit: &Unit<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
-    at_pc_range(unit.entries_tree(None)?.root()?.entry())
+// fn unit_pc_range(unit: &Unit<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
+//     at_pc_range(unit.entries_tree(None)?.root()?.entry())
+// }
+
+// the gimli::Reader we use
+type Reader = EndianRcSlice<LittleEndian>;
+
+pub struct DbgInfo {
+    // an addr2line context
+    ctx: addr2line::Context<Reader>,
 }
 
-pub struct Context {
-    dwarf: Dwarf<EndianReader<LittleEndian, Rc<[u8]>>>,
-}
-
-impl Context {
+impl DbgInfo {
     pub fn new(file: &File) -> gimli::Result<Self> {
-        let load_section =
-            |id: gimli::SectionId| -> Result<EndianRcSlice<LittleEndian>, gimli::Error> {
-                let data = file
-                    .section_by_name(id.name())
-                    .and_then(|section| section.uncompressed_data().ok())
-                    .unwrap_or(Cow::Borrowed(&[][..]));
-                Ok(EndianRcSlice::new(Rc::from(&*data), Default::default()))
-            };
+        let load_section = |id: gimli::SectionId| -> Result<Reader, gimli::Error> {
+            let data = file
+                .section_by_name(id.name())
+                .and_then(|section| section.uncompressed_data().ok())
+                .unwrap_or(Cow::Borrowed(&[][..]));
+            Ok(Reader::new(Rc::from(&*data), LittleEndian))
+        };
 
         // Load all of the sections.
         let dwarf = gimli::Dwarf::load(&load_section)?;
-        Ok(Self { dwarf })
+        let ctx = addr2line::Context::from_dwarf(dwarf)?;
+        Ok(Self { ctx })
     }
 
     #[allow(dead_code)]
     pub fn get_function_from_pc(&self, pc: u64) -> Result<Option<Range<u64>>, gimli::Error> {
-        // Iterate over the compilation units.
-        let mut iter = self.dwarf.units();
-        while let Some(header) = iter.next()? {
-            let unit = self.dwarf.unit(header)?;
-            if !unit_pc_range(&unit)?.contains(&pc) {
-                continue;
-            }
-
-            // Iterate over the Debugging Information Entries (DIEs) in the unit.
-            let mut depth = 0;
-            let mut entries = unit.entries();
-
-            while let Some((delta_depth, entry)) = entries.next_dfs()? {
-                depth += delta_depth;
-                if entry.tag() != gimli::DW_TAG_subprogram {
-                    continue;
-                }
-                let range = at_pc_range(entry)?;
-                if range.contains(&pc) {
-                    return Ok(Some(range));
-                }
-            }
+        let loc = self.ctx.find_location_range(pc, pc + 1)?.next();
+        match loc {
+            Some((low, high, _)) => Ok(Some(low..high)),
+            None => Ok(None),
         }
-        Ok(None)
     }
 }
