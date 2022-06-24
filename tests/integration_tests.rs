@@ -80,3 +80,8 @@ fn test_eof() {
     let out = wait_stdout(cmd);
     assert!(!out.contains("Hello"), "program should not have run");
 }
+
+#[test]
+fn test_single_stepping() {
+    run_rdb(&["stepi", "stepi", "stepi", "quit"]);
+}

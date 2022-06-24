@@ -14,16 +14,14 @@ use object::{Object, ObjectKind};
 use regex::Regex;
 use rustyline::{error::ReadlineError, Editor};
 
-mod ptrace;
-use ptrace::{Reg, WaitStatus};
-
 mod cli;
-use cli::{Command, RegisterCommand};
-
 mod dwarf;
-use dwarf::DbgInfo;
-
+mod ptrace;
 mod source;
+
+use cli::{Command, RegisterCommand};
+use dwarf::DbgInfo;
+use ptrace::{Reg, WaitStatus};
 use source::print_source;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +139,7 @@ impl Dbg {
                 RegisterCommand::Read { reg } => self.read_register(reg),
                 RegisterCommand::Write { reg, val } => self.write_register(reg, val),
             },
+            Command::Stepi => self.single_step(),
             Command::Quit => {
                 return;
             }
@@ -265,6 +264,16 @@ impl Dbg {
                 self.target.wait();
                 bp.enable();
             }
+        }
+    }
+
+    fn single_step(&mut self) {
+        let pc = self.get_pc();
+        if self.breakpoints.contains_key(&pc) {
+            self.step_over_breakpoint();
+        } else {
+            self.target.singlestep();
+            self.target.wait();
         }
     }
 

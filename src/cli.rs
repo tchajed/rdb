@@ -35,6 +35,8 @@ pub enum Command {
     /// interact with registers
     #[clap(subcommand)]
     Register(RegisterCommand),
+    /// step over a single instruction
+    Stepi,
     /// exit debugger
     Quit,
     /// print help message
