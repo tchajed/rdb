@@ -116,8 +116,8 @@ impl Dbg {
     fn handle_command(&mut self, cmd: cli::Command) {
         match cmd {
             Command::Continue => self.continue_execution(),
-            Command::Break { addr } => self.set_breakpoint_at_address(addr),
-            Command::Disable { addr } => self.disable_breakpoint_at_address(addr),
+            Command::Break { pc } => self.set_breakpoint_at_address(self.load_addr + pc),
+            Command::Disable { pc } => self.disable_breakpoint_at_address(self.load_addr + pc),
             Command::Register(cmd) => match cmd {
                 RegisterCommand::Dump => self.dump_registers(),
                 RegisterCommand::Read { reg } => self.read_register(reg),
@@ -146,7 +146,10 @@ impl Dbg {
                 }
                 self.running = false;
             }
-            s if s.is_breakpoint() => println!("stopped at breakpoint"),
+            s if s.is_breakpoint() => {
+                let bp = self.get_pc() - 1 - self.load_addr;
+                println!("stopped at breakpoint {:x}", bp);
+            }
             WaitStatus::Stopped { signal: s } => {
                 if s == libc::SIGSEGV {
                     eprintln!("SIGSEGV in target");
@@ -160,16 +163,15 @@ impl Dbg {
         let bp = self
             .breakpoints
             .entry(addr)
-            .or_insert_with(|| Breakpoint::new(self.target, self.load_addr + addr));
+            .or_insert_with(|| Breakpoint::new(self.target, addr));
         if bp.enabled() {
-            eprintln!("already have a breakpoint at 0x{:x}", addr);
+            eprintln!("already have a breakpoint at 0x{:x}", addr - self.load_addr);
             return;
         }
         bp.enable();
     }
 
     fn disable_breakpoint_at_address(&mut self, addr: u64) {
-        let addr = self.load_addr + addr;
         match self.breakpoints.get_mut(&addr) {
             None => {
                 eprintln!("no such breakpoint");
@@ -217,10 +219,7 @@ impl Dbg {
                     self.target.setreg(Reg::Rip, possible_bp_location);
                     bp.disable();
                     self.target.singlestep();
-                    let s = self.target.wait();
-                    if !s.is_breakpoint() {
-                        eprintln!("confusing single step result {:?}", s);
-                    }
+                    self.target.wait();
                     bp.enable();
                 };
             }

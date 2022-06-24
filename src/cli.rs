@@ -25,12 +25,12 @@ pub enum Command {
     /// set a breakpoint
     Break {
         #[clap(value_parser = maybe_hex::<u64>)]
-        addr: u64,
+        pc: u64,
     },
     /// delete a breakpoint
     Disable {
         #[clap(value_parser = maybe_hex::<u64>)]
-        addr: u64,
+        pc: u64,
     },
     /// interact with registers
     #[clap(subcommand)]
