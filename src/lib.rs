@@ -19,7 +19,7 @@ mod cli;
 use cli::{Command, RegisterCommand};
 
 mod dwarf;
-use dwarf::get_function_from_pc;
+use dwarf::Context;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -63,18 +63,19 @@ impl Breakpoint {
     }
 }
 
-struct Dbg<'data> {
+struct Dbg {
     target: ptrace::Target,
-    file: object::File<'data>,
+    dwarf: Context,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
-impl<'data> Dbg<'data> {
-    fn new(file: object::File<'data>, target: pid_t) -> Self {
+impl Dbg {
+    fn new(file: object::File, target: pid_t) -> Self {
+        let dwarf = Context::new(&file).expect("could not load dwarf file");
         Self {
             target: ptrace::Target::new(target),
-            file,
+            dwarf,
             running: true,
             breakpoints: HashMap::new(),
         }
@@ -187,8 +188,6 @@ impl<'data> Dbg<'data> {
 
     fn run(&mut self) {
         println!("debugging pid {}", self.target);
-
-        get_function_from_pc(&self.file, 0).unwrap();
 
         if let WaitStatus::Exited { .. } = self.target.wait() {
             eprintln!("target exited before start");
