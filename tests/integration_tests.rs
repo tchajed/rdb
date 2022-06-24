@@ -88,7 +88,7 @@ fn test_single_stepping() {
 
 #[test]
 fn test_step_out_main() {
-    // at the very beginning step-out should return from main
-    let out = run_rdb(&["step-out"]);
+    // at the very beginning finish should return from main
+    let out = run_rdb(&["finish"]);
     assert!(out.contains("program exited"));
 }

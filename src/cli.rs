@@ -38,11 +38,11 @@ pub enum Command {
     /// step over a single instruction
     Stepi,
     /// step out of the current function
-    StepOut,
-    /// step into the next function (?)
-    StepIn,
+    Finish,
+    /// step into the next function
+    Step,
     /// step over the next source line
-    StepOver,
+    Next,
     /// exit debugger
     Quit,
     /// print help message

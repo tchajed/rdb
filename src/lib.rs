@@ -81,6 +81,30 @@ fn display_code(si_code: i32) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TempBreakpoints {
+    to_delete: Vec<u64>,
+}
+
+impl TempBreakpoints {
+    fn new() -> Self {
+        Self { to_delete: vec![] }
+    }
+
+    fn ensure_breakpoint(&mut self, dbg: &mut Dbg, addr: u64) {
+        if !dbg.breakpoints.contains_key(&addr) {
+            dbg.set_breakpoint_at_address(addr);
+            self.to_delete.push(addr);
+        }
+    }
+
+    fn delete_all(self, dbg: &mut Dbg) {
+        for addr in self.to_delete.into_iter() {
+            dbg.breakpoints.remove(&addr).unwrap().disable();
+        }
+    }
+}
+
 struct Dbg {
     target: ptrace::Target,
     load_addr: u64,
@@ -140,9 +164,9 @@ impl Dbg {
                 RegisterCommand::Write { reg, val } => self.write_register(reg, val),
             },
             Command::Stepi => self.single_step(),
-            Command::StepOut => self.step_out(),
-            Command::StepIn => self.step_in(),
-            Command::StepOver => unimplemented!(),
+            Command::Finish => self.step_out(),
+            Command::Step => self.step_in(),
+            Command::Next => self.step_over(),
             Command::Quit => {
                 return;
             }
@@ -297,22 +321,21 @@ impl Dbg {
         self.single_step_instruction();
     }
 
+    fn get_current_return_address(&self) -> u64 {
+        let frame_pointer = self.target.getreg(Reg::Rbp);
+        self.target.peekdata(frame_pointer + 8)
+    }
+
     /// Step until the current function exits.
     fn step_out(&mut self) {
-        let frame_pointer = self.target.getreg(Reg::Rbp);
-        let return_address = self.target.peekdata(frame_pointer + 8);
+        let return_address = self.get_current_return_address();
 
-        let mut internal_bp = false;
-        if !self.breakpoints.contains_key(&return_address) {
-            self.set_breakpoint_at_address(return_address);
-            internal_bp = true;
-        }
+        let mut temp_bp = TempBreakpoints::new();
+        temp_bp.ensure_breakpoint(self, return_address);
 
         self.continue_execution();
 
-        if internal_bp {
-            self.breakpoints.remove(&return_address).unwrap().disable();
-        }
+        temp_bp.delete_all(self);
     }
 
     fn step_in(&mut self) {
@@ -336,6 +359,31 @@ impl Dbg {
                 return;
             }
         }
+    }
+
+    fn step_over(&mut self) {
+        let pc = self.get_offset_pc();
+        let locs = self
+            .info
+            .function_lines_from_pc(pc)
+            .expect("could not get lines for function");
+        // TODO: somehow need to get the "start line", which seems to be the
+        // result of going from pc -> line -> pc
+        //
+        // currently just use pc
+        let start_line = pc;
+        let mut temp_bp = TempBreakpoints::new();
+        for (line_pc, _) in locs.into_iter() {
+            if line_pc != start_line {
+                temp_bp.ensure_breakpoint(self, self.load_addr + line_pc);
+            }
+        }
+        let return_address = self.get_current_return_address();
+        temp_bp.ensure_breakpoint(self, return_address);
+
+        self.continue_execution();
+
+        temp_bp.delete_all(self)
     }
 
     fn run(&mut self) {
