@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{self, BufRead},
     os::unix::process::CommandExt,
-    path::Path,
+    path::{Path, PathBuf},
     process::{self, Stdio},
 };
 
@@ -22,6 +22,9 @@ use cli::{Command, RegisterCommand};
 
 mod dwarf;
 use dwarf::DbgInfo;
+
+mod source;
+use source::print_source;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -64,6 +67,11 @@ impl Breakpoint {
         self.saved_data = None;
     }
 }
+
+// taken from kernel
+const SI_KERNEL: i32 = 128;
+const TRAP_BRKPT: i32 = 1;
+const TRAP_TRACE: i32 = 2;
 
 struct Dbg {
     target: ptrace::Target,
@@ -133,11 +141,35 @@ impl Dbg {
         }
     }
 
+    fn handle_sigtrap(&self, siginfo: libc::siginfo_t) {
+        let code = siginfo.si_code;
+        if code == SI_KERNEL || code == TRAP_BRKPT {
+            let pc = self.get_pc() - 1;
+            self.set_pc(pc);
+            println!("hit breakpoint 0x{:x}", pc);
+            let offset_pc = pc - self.load_addr;
+            let loc = self
+                .info
+                .source_for_pc(offset_pc)
+                .expect("could not lookup source");
+            if let Some(loc) = loc {
+                let path: PathBuf = loc.file.unwrap().into();
+                print_source(&path, loc.line.unwrap() as usize, 1);
+            }
+        } else if code == TRAP_TRACE {
+            // from single-stepping
+            return;
+        } else {
+            eprintln!("unknown SIGTRAP code {}", code);
+        }
+    }
+
     fn continue_execution(&mut self) {
         self.step_over_breakpoint();
 
         unsafe { self.target.cont(0) };
 
+        #[allow(clippy::single_match)]
         match self.target.wait() {
             WaitStatus::Exited { status } => {
                 if status == 0 {
@@ -147,16 +179,25 @@ impl Dbg {
                 }
                 self.running = false;
             }
-            s if s.is_breakpoint() => {
-                let bp = self.get_pc() - 1 - self.load_addr;
-                println!("stopped at breakpoint 0x{:x}", bp);
-            }
-            WaitStatus::Stopped { signal: s } => {
-                if s == libc::SIGSEGV {
-                    eprintln!("SIGSEGV in target");
-                }
-            }
+            // s if s.is_breakpoint() => {
+            //     let bp = self.get_pc() - 1 - self.load_addr;
+            //     println!("stopped at breakpoint 0x{:x}", bp);
+            // }
+            // WaitStatus::Stopped { signal: s } => {
+            //     if s == libc::SIGSEGV {
+            //         eprintln!("SIGSEGV in target");
+            //     }
+            // }
             _ => {}
+        }
+
+        let siginfo = unsafe { self.target.getsiginfo() };
+        if siginfo.si_signo == libc::SIGTRAP {
+            self.handle_sigtrap(siginfo);
+        } else if siginfo.si_signo == libc::SIGSEGV {
+            println!("yay segfault: {}", siginfo.si_code);
+        } else {
+            println!("got signal {}", siginfo.si_signo);
         }
     }
 
@@ -206,18 +247,21 @@ impl Dbg {
         unsafe { self.target.getreg(Reg::Rip) }
     }
 
+    fn set_pc(&self, pc: u64) {
+        unsafe {
+            self.target.setreg(Reg::Rip, pc);
+        }
+    }
+
     /// when stopped at a breakpoint, step past it
     fn step_over_breakpoint(&mut self) {
         let pc = self.get_pc();
         if pc == 0 {
             return;
         }
-        // subtract one to back up over int3 instruction
-        let possible_bp_location = pc - 1;
-        if let Some(bp) = self.breakpoints.get_mut(&possible_bp_location) {
+        if let Some(bp) = self.breakpoints.get_mut(&pc) {
             if bp.enabled() {
                 unsafe {
-                    self.target.setreg(Reg::Rip, possible_bp_location);
                     bp.disable();
                     self.target.singlestep();
                     self.target.wait();

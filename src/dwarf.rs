@@ -36,4 +36,8 @@ impl DbgInfo {
             None => Ok(None),
         }
     }
+
+    pub fn source_for_pc(&self, pc: u64) -> Result<Option<addr2line::Location>, gimli::Error> {
+        self.ctx.find_location(pc)
+    }
 }

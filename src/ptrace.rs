@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, mem};
 
 use libc::{c_uint, pid_t, user_regs_struct};
 
@@ -9,6 +9,7 @@ const CONT: c_uint = 7;
 const SINGLESTEP: c_uint = 7;
 const GETREGS: c_uint = 12;
 const SETREGS: c_uint = 13;
+const GETSIGINFO: c_uint = 0x4202;
 
 pub unsafe fn trace_me() {
     libc::ptrace(TRACEME);
@@ -47,15 +48,6 @@ impl From<libc::c_int> for WaitStatus {
         } else {
             panic!("unexpected wait status");
         }
-    }
-}
-
-impl WaitStatus {
-    pub fn is_breakpoint(&self) -> bool {
-        *self
-            == WaitStatus::Stopped {
-                signal: libc::SIGTRAP,
-            }
     }
 }
 
@@ -291,5 +283,20 @@ impl Target {
             SINGLESTEP, self.0, 0u64, /* ignored */
             0u64, /* ignored */
         );
+    }
+
+    fn default_siginfo_t() -> libc::siginfo_t {
+        unsafe { mem::transmute([0u8; 128]) }
+    }
+
+    pub unsafe fn getsiginfo(&self) -> libc::siginfo_t {
+        let mut info = Self::default_siginfo_t();
+        libc::ptrace(
+            GETSIGINFO,
+            self.0,
+            0usize, // addr is ignored
+            &mut info as *mut libc::siginfo_t as usize,
+        );
+        info
     }
 }
