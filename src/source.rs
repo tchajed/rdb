@@ -10,13 +10,14 @@ fn try_print_source<P: AsRef<Path>>(path: P, line: usize, context: usize) -> Res
     let lineno = line as isize;
     let context = context as isize;
     let mut curr: isize = 1;
-    let f = File::open(path)?;
+    let f = File::open(path.as_ref())?;
     let f = io::BufReader::new(f);
+    println!("{}:", path.as_ref().display());
     for line in f.lines() {
         let line = line?;
         if lineno - context <= curr && curr <= lineno + context {
             let cursor = if lineno == curr { ">" } else { " " };
-            println!("{} {}", cursor, line);
+            println!("{}  {}", cursor, line);
         }
         if curr > lineno + context {
             break;
