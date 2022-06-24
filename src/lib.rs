@@ -5,10 +5,11 @@ use std::{
     fs,
     io::{self, BufRead},
     os::unix::process::CommandExt,
-    path::{Path, PathBuf},
+    path::Path,
     process::{self, Stdio},
 };
 
+use addr2line::Location;
 use libc::pid_t;
 use object::{Object, ObjectKind};
 use regex::Regex;
@@ -22,7 +23,7 @@ mod source;
 use cli::{Command, RegisterCommand};
 use dwarf::DbgInfo;
 use ptrace::{Reg, WaitStatus};
-use source::print_source;
+use source::{print_source, print_source_loc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
@@ -140,7 +141,7 @@ impl Dbg {
             },
             Command::Stepi => self.single_step(),
             Command::StepOut => self.step_out(),
-            Command::StepIn => unimplemented!(),
+            Command::StepIn => self.step_in(),
             Command::StepOver => unimplemented!(),
             Command::Quit => {
                 return;
@@ -163,8 +164,7 @@ impl Dbg {
                 .source_for_pc(offset_pc)
                 .expect("could not lookup source");
             if let Some(loc) = loc {
-                let path: PathBuf = loc.file.unwrap().into();
-                print_source(&path, loc.line.unwrap() as usize, 1);
+                print_source_loc(&loc, 1);
             }
         } else if code == TRAP_TRACE {
             // from single-stepping
@@ -259,6 +259,10 @@ impl Dbg {
         self.target.getreg(Reg::Rip)
     }
 
+    fn get_offset_pc(&self) -> u64 {
+        self.get_pc() - self.load_addr
+    }
+
     fn set_pc(&self, pc: u64) {
         self.target.setreg(Reg::Rip, pc);
     }
@@ -279,7 +283,7 @@ impl Dbg {
         }
     }
 
-    fn single_step(&mut self) {
+    fn single_step_instruction(&mut self) {
         let pc = self.get_pc();
         if self.breakpoints.contains_key(&pc) {
             self.step_over_breakpoint();
@@ -287,6 +291,10 @@ impl Dbg {
             self.target.singlestep();
             self.target.wait();
         }
+    }
+
+    fn single_step(&mut self) {
+        self.single_step_instruction();
     }
 
     /// Step until the current function exits.
@@ -304,6 +312,29 @@ impl Dbg {
 
         if internal_bp {
             self.breakpoints.remove(&return_address).unwrap().disable();
+        }
+    }
+
+    fn step_in(&mut self) {
+        let normalize_loc = |loc: Location| (loc.file.unwrap().to_string(), loc.line);
+        let old = self
+            .info
+            .source_for_pc(self.get_offset_pc())
+            .expect("dwarf error getting current source")
+            .map(normalize_loc);
+        loop {
+            self.single_step_instruction();
+            let loc = self
+                .info
+                .source_for_pc(self.get_offset_pc())
+                .expect("dwarf error getting current source")
+                .map(normalize_loc);
+            if loc != old {
+                if let Some((file, line)) = loc {
+                    print_source(file, line.unwrap() as usize, 1);
+                }
+                return;
+            }
         }
     }
 
