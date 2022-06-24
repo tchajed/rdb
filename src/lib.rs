@@ -87,19 +87,11 @@ impl Dbg {
         for line in f.lines() {
             let line = line?;
             if let Some(captures) = re.captures(&line) {
-                let off = captures
-                    .name("offset")
-                    .unwrap()
-                    .as_str()
-                    .parse::<u64>()
-                    .unwrap();
+                let off = captures.name("offset").unwrap().as_str();
+                let off = u64::from_str_radix(off, 16).expect("could not parse offset");
                 if off == 0 {
-                    let start = captures
-                        .name("start")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u64>()
-                        .unwrap();
+                    let start = captures.name("start").unwrap().as_str();
+                    let start = u64::from_str_radix(start, 16).expect("could not parse start");
                     return Ok(start);
                 }
             }
