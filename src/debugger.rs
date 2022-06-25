@@ -391,7 +391,7 @@ impl Dbg {
     }
 
     /// Attempt to kill the running target.
-    pub fn kill_target(&self) {
+    pub fn kill_target_if_running(&self) {
         if self.running {
             _ = self.target.kill();
         }

@@ -44,7 +44,7 @@ fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
     }
 }
 
-fn run(dbg: &mut Dbg) {
+fn interaction_loop(mut dbg: Dbg) {
     println!("debugging pid {}", dbg.target_pid());
 
     let mut rl = Editor::<()>::new();
@@ -60,7 +60,7 @@ fn run(dbg: &mut Dbg) {
                 rl.add_history_entry(line.as_str());
                 match cli::parse_line(&line) {
                     Ok(Command::Quit) => break,
-                    Ok(cmd) => handle_command(dbg, cmd),
+                    Ok(cmd) => handle_command(&mut dbg, cmd),
                     Err(err) => {
                         eprintln!("{}", err);
                         continue;
@@ -75,7 +75,7 @@ fn run(dbg: &mut Dbg) {
             }
         }
     }
-    dbg.kill_target();
+    dbg.kill_target_if_running();
     _ = rl.save_history(".rdb.history");
 }
 
@@ -86,8 +86,8 @@ pub fn debugger<P: AsRef<Path>>(path: P, target: pid_t) {
     if !object.is_little_endian() {
         panic!("only handling little endian");
     }
-    let mut dbg = Dbg::new(object, target);
-    run(&mut dbg);
+    let dbg = Dbg::new(object, target);
+    interaction_loop(dbg);
 }
 
 pub fn run_target(prog: &OsStr, args: &[OsString]) -> io::Error {
