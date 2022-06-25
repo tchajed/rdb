@@ -1,4 +1,4 @@
-use std::{fmt::Display, mem};
+use std::{fmt::Display, mem::MaybeUninit};
 
 use libc::{c_uint, pid_t, user_regs_struct};
 
@@ -217,48 +217,16 @@ impl Target {
         status.into()
     }
 
-    fn default_user_regs_struct() -> user_regs_struct {
-        user_regs_struct {
-            r15: 0,
-            r14: 0,
-            r13: 0,
-            r12: 0,
-            rbp: 0,
-            rbx: 0,
-            r11: 0,
-            r10: 0,
-            r9: 0,
-            r8: 0,
-            rax: 0,
-            rcx: 0,
-            rdx: 0,
-            rsi: 0,
-            rdi: 0,
-            orig_rax: 0,
-            rip: 0,
-            cs: 0,
-            eflags: 0,
-            rsp: 0,
-            ss: 0,
-            fs_base: 0,
-            gs_base: 0,
-            ds: 0,
-            es: 0,
-            fs: 0,
-            gs: 0,
-        }
-    }
-
     pub fn getregs(&self) -> user_regs_struct {
-        let mut regs = Self::default_user_regs_struct();
-        let data = &mut regs as *mut user_regs_struct as usize;
+        let mut regs = MaybeUninit::uninit();
+        let data = regs.as_mut_ptr() as usize;
         unsafe {
             libc::ptrace(
                 GETREGS, self.0, 0usize, // addr is ignored
                 data,
             );
         }
-        regs
+        unsafe { regs.assume_init() }
     }
 
     pub fn getreg(&self, r: Reg) -> u64 {
@@ -291,19 +259,15 @@ impl Target {
         }
     }
 
-    fn default_siginfo_t() -> libc::siginfo_t {
-        unsafe { mem::transmute([0u8; 128]) }
-    }
-
     pub fn getsiginfo(&self) -> libc::siginfo_t {
-        let mut info = Self::default_siginfo_t();
-        let data = &mut info as *mut libc::siginfo_t as usize;
+        let mut info = MaybeUninit::uninit();
+        let data = info.as_mut_ptr() as usize;
         unsafe {
             libc::ptrace(
                 GETSIGINFO, self.0, 0usize, // addr is ignored
                 data,
             );
         }
-        info
+        unsafe { info.assume_init() }
     }
 }
