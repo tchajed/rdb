@@ -260,10 +260,10 @@ impl Target {
     }
 
     pub fn getregs(&self) -> Result<user_regs_struct> {
-        let mut regs = MaybeUninit::uninit();
+        let mut regs = MaybeUninit::<user_regs_struct>::uninit();
         let data = regs.as_mut_ptr() as usize;
         self.ptrace(GETREGS, 0 /* addr is ignored */, data)?;
-        unsafe { regs.assume_init() }
+        unsafe { Ok(regs.assume_init()) }
     }
 
     pub fn getreg(&self, r: Reg) -> Result<u64> {
@@ -287,7 +287,7 @@ impl Target {
     }
 
     pub fn getsiginfo(&self) -> Result<libc::siginfo_t> {
-        let mut info = MaybeUninit::uninit();
+        let mut info = MaybeUninit::<libc::siginfo_t>::uninit();
         let data = info.as_mut_ptr() as usize;
         self.ptrace(GETSIGINFO, 0 /* addr is ignored */, data)?;
         unsafe { Ok(info.assume_init()) }

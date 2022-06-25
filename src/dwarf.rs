@@ -2,7 +2,7 @@
 use std::{borrow::Cow, ops::Range, rc::Rc};
 
 use addr2line::Location;
-use gimli::{AttributeValue, DebuggingInformationEntry, EndianRcSlice, LittleEndian};
+use gimli::{AttributeValue, DebuggingInformationEntry, EndianRcSlice, LittleEndian, Reader};
 use object::{File, Object, ObjectSection};
 
 type Die<'abbrev, 'unit, R> =
@@ -45,21 +45,21 @@ fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
 // }
 
 // the gimli::Reader we use
-type Reader = EndianRcSlice<LittleEndian>;
+type R = EndianRcSlice<LittleEndian>;
 
 pub struct DbgInfo {
     // an addr2line context
-    ctx: addr2line::Context<Reader>,
+    ctx: addr2line::Context<R>,
 }
 
 impl DbgInfo {
     pub fn new(file: &File) -> gimli::Result<Self> {
-        let load_section = |id: gimli::SectionId| -> Result<Reader, gimli::Error> {
+        let load_section = |id: gimli::SectionId| -> Result<R, gimli::Error> {
             let data = file
                 .section_by_name(id.name())
                 .and_then(|section| section.uncompressed_data().ok())
                 .unwrap_or(Cow::Borrowed(&[][..]));
-            Ok(Reader::new(Rc::from(&*data), LittleEndian))
+            Ok(R::new(Rc::from(&*data), LittleEndian))
         };
 
         // Load all of the sections.
@@ -90,7 +90,7 @@ impl DbgInfo {
         Ok(None)
     }
 
-    pub fn function_lines_from_pc(&self, pc: u64) -> Result<Vec<(u64, u64)>, gimli::Error> {
+    pub fn function_lines_from_pc(&self, pc: u64) -> Result<Vec<u64>, gimli::Error> {
         let range = match self.get_function_range_from_pc(pc)? {
             Some(range) => range,
             None => return Ok(vec![]),
@@ -98,12 +98,38 @@ impl DbgInfo {
         let mut locs = vec![];
         let iter = self.ctx.find_location_range(range.start, range.end)?;
         for (start, end, loc) in iter {
-            locs.push((start, end));
+            locs.push(start);
         }
         Ok(locs)
     }
 
     pub fn source_for_pc(&self, pc: u64) -> Result<Option<Location>, gimli::Error> {
         self.ctx.find_location(pc)
+    }
+
+    pub fn pc_for_function_pred<F>(&self, pred: F) -> Result<Option<u64>, gimli::Error>
+    where
+        F: for<'a> Fn(&'a str) -> bool,
+    {
+        let mut units = self.ctx.dwarf().units();
+        while let Some(header) = units.next()? {
+            let unit = self.ctx.dwarf().unit(header)?;
+            let mut entries = unit.entries();
+
+            while let Some((_, entry)) = entries.next_dfs()? {
+                let attr = match entry.attr(gimli::DW_AT_name)? {
+                    Some(attr) => attr,
+                    None => continue,
+                };
+                if let Some(val) = attr.value().string_value(&self.ctx.dwarf().debug_str) {
+                    let name = val.to_string_lossy()?;
+                    if pred(&name) {
+                        let pc = at_low_pc(entry)?;
+                        return Ok(Some(pc));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 }

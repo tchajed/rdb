@@ -92,3 +92,21 @@ fn test_step_out_main() {
     let out = run_rdb(&["finish"]);
     assert!(out.contains("program exited"));
 }
+
+#[test]
+fn test_function_breakpoint() {
+    let out = run_rdb(&["break use_vars", "continue", "next", "quit"]);
+    assert!(out.contains(">      let mut b: u64 = 2;"));
+}
+
+#[test]
+fn test_function_finish() {
+    let out = run_rdb(&["break use_vars", "continue", "next", "finish", "quit"]);
+    assert!(out.contains(">      greeting();"));
+}
+
+#[test]
+fn test_function_step_in() {
+    let out = run_rdb(&["break use_vars", "continue", "finish", "step", "quit"]);
+    assert!(out.contains("fn greeting()"));
+}

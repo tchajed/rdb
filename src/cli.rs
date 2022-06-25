@@ -18,14 +18,40 @@ struct Input {
     pub command: Command,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BreakpointLoc {
+    Addr { pc: u64 },
+    Line { file: String, line: usize },
+    Function { name: String },
+}
+
+impl BreakpointLoc {
+    fn parse(value: &str) -> Result<Self, String> {
+        if let Some(num) = value.strip_prefix("0x") {
+            let pc = u64::from_str_radix(num, 16).map_err(|err| err.to_string())?;
+            Ok(Self::Addr { pc })
+        } else if let Some((file, line)) = value.split_once(':') {
+            let line = line.parse::<usize>().map_err(|err| err.to_string())?;
+            Ok(Self::Line {
+                file: file.to_string(),
+                line,
+            })
+        } else {
+            Ok(Self::Function {
+                name: value.to_string(),
+            })
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     /// continue executing target
     Continue,
     /// set a breakpoint
     Break {
-        #[clap(value_parser = maybe_hex::<u64>)]
-        pc: u64,
+        #[clap(value_parser = BreakpointLoc::parse)]
+        loc: BreakpointLoc,
     },
     /// delete a breakpoint
     Disable {

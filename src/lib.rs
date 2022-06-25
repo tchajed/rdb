@@ -18,13 +18,17 @@ mod dwarf;
 mod ptrace;
 mod source;
 
-use cli::{Command, RegisterCommand};
+use cli::{BreakpointLoc, Command, RegisterCommand};
 use debugger::Dbg;
 
 fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
     match cmd {
         Command::Continue => dbg.continue_execution().expect("continue failed"),
-        Command::Break { pc } => dbg.set_user_breakpoint(pc),
+        Command::Break { loc } => match loc {
+            BreakpointLoc::Addr { pc } => dbg.set_user_breakpoint(pc),
+            BreakpointLoc::Line { file: _, line: _ } => unimplemented!("source lookup"),
+            BreakpointLoc::Function { name } => dbg.set_breakpoint_at_function(&name),
+        },
         Command::Disable { pc } => dbg.disable_user_breakpoint(pc),
         Command::Register(cmd) => match cmd {
             RegisterCommand::Dump => dbg.dump_registers(),

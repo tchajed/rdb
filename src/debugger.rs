@@ -102,6 +102,7 @@ impl TempBreakpoints {
     fn ensure_breakpoint(&mut self, dbg: &mut Dbg, addr: u64) {
         if !dbg.breakpoints.contains_key(&addr) {
             dbg.set_breakpoint_at_address(addr, BreakpointSource::Internal);
+            self.to_delete.push(addr);
         }
     }
 
@@ -250,6 +251,22 @@ impl Dbg {
         bp.enable();
     }
 
+    /// Set a breakpoint at a function's start, by name.
+    pub fn set_breakpoint_at_function(&mut self, needle: &str) {
+        let pc = self
+            .info
+            .pc_for_function_pred(|name| name == needle)
+            .unwrap();
+        match pc {
+            None => eprintln!("couldn't find function matching {}", needle),
+            Some(pc) => {
+                let lines = self.info.function_lines_from_pc(pc).unwrap();
+                let begin = if lines.len() > 1 { lines[1] } else { lines[0] };
+                self.set_breakpoint_at_address(self.load_addr + begin, BreakpointSource::User);
+            }
+        }
+    }
+
     /// Disable a user breakpoint by address
     ///
     /// See [`set_user_breakpoint`](#set_user_breakpoint) for the interpretation of pc.
@@ -390,7 +407,7 @@ impl Dbg {
         // currently just use pc
         let start_line = pc;
         let mut temp_bp = TempBreakpoints::new();
-        for (line_pc, _) in locs.into_iter() {
+        for line_pc in locs.into_iter() {
             if line_pc != start_line {
                 temp_bp.ensure_breakpoint(self, self.load_addr + line_pc);
             }

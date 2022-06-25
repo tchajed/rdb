@@ -17,19 +17,19 @@ program ([test.rs](src/bin/test.rs)):
 ```
 $ cargo build
 $ ./target/debug/rdb ./target/debug/test
-debugging pid 208686
-rdb> break 0x79e0
+debugging pid 262691
+rdb> break use_vars
 rdb> continue
-hit breakpoint 0x79e0
-/home/tchajed/rdb/src/bin/test.rs:
-   #[no_mangle]
->  fn use_vars() {
-       let mut a: u64 = 3;
-rdb> next
+hit breakpoint 0x79e8
 /home/tchajed/rdb/src/bin/test.rs:
    fn use_vars() {
 >      let mut a: u64 = 3;
        let mut b: u64 = 2;
+rdb> next
+/home/tchajed/rdb/src/bin/test.rs:
+       let mut a: u64 = 3;
+>      let mut b: u64 = 2;
+       let c = a + b;
 rdb> finish
 /home/tchajed/rdb/src/bin/test.rs:
        use_vars();
@@ -43,5 +43,4 @@ rdb> step
 rdb> continue
 Hello, world
 program exited
-rdb> quit
 ```
