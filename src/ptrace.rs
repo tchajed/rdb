@@ -18,6 +18,12 @@ pub fn trace_me() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Target(pid_t);
 
+impl Target {
+    pub fn pid(&self) -> pid_t {
+        self.0
+    }
+}
+
 impl Display for Target {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
