@@ -59,18 +59,24 @@ impl Breakpoint {
 
     fn enable(&mut self) {
         assert!(!self.enabled(), "breakpoint is already enabled");
-        let old_data = self.target.peekdata(self.addr);
+        let old_data = self.target.peekdata(self.addr).expect("peek failed");
         let saved = (old_data & 0xff) as u8;
-        self.saved_data = Some(saved);
         let new_data = (old_data & (!0xffu64)) | (Self::INT3_INSTR as u64);
-        self.target.pokedata(self.addr, new_data);
+        if self.target.pokedata(self.addr, new_data).is_ok() {
+            self.saved_data = Some(saved);
+        } else {
+            // could not set breakpoint
+
+            // TODO: bubble up an appropriate report (depends on how this
+            // breakpoint's address was computed)
+        }
     }
 
     fn disable(&mut self) {
         assert!(self.enabled(), "breakpoint is not enabled");
-        let old_data = self.target.peekdata(self.addr);
+        let old_data = self.target.peekdata(self.addr).expect("peek failed");
         let new_data = (old_data & (!0xffu64)) | (self.saved_data.unwrap() as u64);
-        self.target.pokedata(self.addr, new_data);
+        self.target.pokedata(self.addr, new_data).unwrap();
         self.saved_data = None;
     }
 }
@@ -102,13 +108,15 @@ impl TempBreakpoints {
     fn ensure_breakpoint(&mut self, dbg: &mut Dbg, addr: u64) {
         if !dbg.breakpoints.contains_key(&addr) {
             dbg.set_breakpoint_at_address(addr, BreakpointSource::Internal);
-            self.to_delete.push(addr);
         }
     }
 
     fn delete_all(self, dbg: &mut Dbg) {
         for addr in self.to_delete.into_iter() {
-            dbg.breakpoints.remove(&addr).unwrap().disable();
+            let mut bp = dbg.breakpoints.remove(&addr).unwrap();
+            if bp.enabled() {
+                bp.disable();
+            }
         }
     }
 }
@@ -150,7 +158,7 @@ impl Dbg {
     fn new(file: object::File, pid: pid_t) -> Self {
         let info = DbgInfo::new(&file).expect("could not load dwarf file");
         let target = ptrace::Target::new(pid);
-        target.wait();
+        target.wait().unwrap();
         let load_addr = Self::get_load_address(&file, pid).expect("could not get load address");
         Self {
             target,
@@ -163,7 +171,7 @@ impl Dbg {
 
     fn handle_command(&mut self, cmd: cli::Command) {
         match cmd {
-            Command::Continue => self.continue_execution(),
+            Command::Continue => self.continue_execution().expect("continue failed"),
             Command::Break { pc } => self.set_user_breakpoint(pc),
             Command::Disable { pc } => self.disable_user_breakpoint(pc),
             Command::Register(cmd) => match cmd {
@@ -213,10 +221,10 @@ impl Dbg {
         }
     }
 
-    fn continue_execution(&mut self) {
+    fn continue_execution(&mut self) -> Result<(), io::Error> {
         self.step_over_breakpoint();
-        self.target.cont(0);
-        let s = self.target.wait();
+        self.target.cont(0)?;
+        let s = self.target.wait()?;
 
         if let WaitStatus::Exited { status } = s {
             if status == 0 {
@@ -225,13 +233,14 @@ impl Dbg {
                 eprintln!("program exited with status {status}");
             }
             self.running = false;
+            return Ok(());
         }
 
-        let siginfo = self.target.getsiginfo();
+        let siginfo = self.target.getsiginfo()?;
         let signo = siginfo.si_signo;
         if signo == 0 {
             // no signal
-            return;
+            return Ok(());
         }
         if signo == libc::SIGTRAP {
             self.handle_sigtrap(siginfo);
@@ -240,6 +249,7 @@ impl Dbg {
         } else {
             println!("got signal {}", siginfo.si_signo);
         }
+        Ok(())
     }
 
     fn set_user_breakpoint(&mut self, pc: u64) {
@@ -279,7 +289,7 @@ impl Dbg {
     }
 
     fn dump_registers(&self) {
-        let regs = self.target.getregs();
+        let regs = self.target.getregs().unwrap();
         let width = ptrace::REGS.iter().map(|r| r.name.len()).max().unwrap();
         for r in ptrace::REGS.iter() {
             let val = r.reg.get_reg(&regs);
@@ -288,16 +298,16 @@ impl Dbg {
     }
 
     fn read_register(&self, r: Reg) {
-        let val = self.target.getreg(r);
+        let val = self.target.getreg(r).unwrap();
         println!("0x{:x}", val);
     }
 
     fn write_register(&self, r: Reg, val: u64) {
-        self.target.setreg(r, val);
+        self.target.setreg(r, val).unwrap();
     }
 
     fn get_pc(&self) -> u64 {
-        self.target.getreg(Reg::Rip)
+        self.target.getreg(Reg::Rip).unwrap()
     }
 
     fn get_offset_pc(&self) -> u64 {
@@ -305,7 +315,7 @@ impl Dbg {
     }
 
     fn set_pc(&self, pc: u64) {
-        self.target.setreg(Reg::Rip, pc);
+        self.target.setreg(Reg::Rip, pc).unwrap();
     }
 
     /// when stopped at a breakpoint, step past it
@@ -317,8 +327,8 @@ impl Dbg {
         if let Some(bp) = self.breakpoints.get_mut(&pc) {
             if bp.enabled() {
                 bp.disable();
-                self.target.singlestep();
-                self.target.wait();
+                self.target.singlestep().unwrap();
+                self.target.wait().unwrap();
                 bp.enable();
             }
         }
@@ -329,8 +339,8 @@ impl Dbg {
         if self.breakpoints.contains_key(&pc) {
             self.step_over_breakpoint();
         } else {
-            self.target.singlestep();
-            self.target.wait();
+            self.target.singlestep().unwrap();
+            self.target.wait().unwrap();
         }
     }
 
@@ -339,8 +349,8 @@ impl Dbg {
     }
 
     fn get_current_return_address(&self) -> u64 {
-        let frame_pointer = self.target.getreg(Reg::Rbp);
-        self.target.peekdata(frame_pointer + 8)
+        let frame_pointer = self.target.getreg(Reg::Rbp).unwrap();
+        self.target.peekdata(frame_pointer + 8).unwrap()
     }
 
     /// Step until the current function exits.
@@ -350,7 +360,7 @@ impl Dbg {
         let mut temp_bp = TempBreakpoints::new();
         temp_bp.ensure_breakpoint(self, return_address);
 
-        self.continue_execution();
+        self.continue_execution().unwrap();
 
         temp_bp.delete_all(self);
     }
@@ -398,7 +408,7 @@ impl Dbg {
         let return_address = self.get_current_return_address();
         temp_bp.ensure_breakpoint(self, return_address);
 
-        self.continue_execution();
+        self.continue_execution().unwrap();
 
         temp_bp.delete_all(self)
     }
@@ -436,7 +446,7 @@ impl Dbg {
         }
         if self.running {
             // terminate child
-            self.target.kill();
+            _ = self.target.kill();
         }
         _ = rl.save_history(".rdb.history");
     }

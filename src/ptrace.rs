@@ -1,6 +1,6 @@
-use std::{fmt::Display, mem::MaybeUninit};
+use std::{fmt::Display, io, mem::MaybeUninit};
 
-use libc::{c_uint, pid_t, user_regs_struct};
+use libc::{c_long, c_uint, pid_t, user_regs_struct};
 
 const TRACEME: c_uint = 0;
 const PEEKDATA: c_uint = 2;
@@ -86,7 +86,7 @@ pub enum Reg {
 impl TryFrom<&str> for Reg {
     type Error = String;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+    fn try_from(s: &str) -> std::result::Result<Self, Self::Error> {
         REGS.iter()
             .find(|r| r.name == s)
             .map(|r| r.reg)
@@ -137,7 +137,7 @@ impl Reg {
     }
 
     #[allow(dead_code)]
-    pub fn from_dwarf(dwarf_r: usize) -> Result<Self, String> {
+    pub fn from_dwarf(dwarf_r: usize) -> std::result::Result<Self, String> {
         REGS.iter()
             .find(|r| r.dwarf_r == dwarf_r)
             .map(|r| r.reg)
@@ -186,88 +186,104 @@ pub const REGS: [RegDescriptor; 27] = [
     desc(Reg::Gs, 5, "gs"),
 ];
 
+type Result<T> = std::result::Result<T, io::Error>;
+
+fn clear_errno() {
+    unsafe {
+        libc::__errno_location().write(0);
+    }
+}
+
+fn get_errno() -> i32 {
+    unsafe { libc::__errno_location().read() }
+}
+
+fn errno_result(r: c_long) -> Result<()> {
+    if r < 0 {
+        let errno = get_errno();
+        Err(io::Error::from_raw_os_error(errno))
+    } else {
+        Ok(())
+    }
+}
+
+fn ptrace(req: c_uint, pid: pid_t, addr: usize, data: usize) -> Result<()> {
+    let r = unsafe { libc::ptrace(req, pid, addr, data) };
+    errno_result(r)
+}
+
 impl Target {
     pub fn new(pid: pid_t) -> Self {
         Self(pid)
     }
 
-    pub fn kill(self) {
-        unsafe {
-            libc::kill(self.0, libc::SIGKILL);
+    pub fn kill(self) -> Result<()> {
+        let r = unsafe { libc::kill(self.0, libc::SIGKILL) };
+        errno_result(r as c_long)
+    }
+
+    fn ptrace(&self, req: c_uint, addr: usize, data: usize) -> Result<()> {
+        ptrace(req, self.0, addr, data)
+    }
+
+    pub fn cont(&self, signal: c_uint) -> Result<()> {
+        self.ptrace(CONT, 0, signal as usize)
+    }
+
+    pub fn peekdata(&self, addr: u64) -> Result<u64> {
+        // need to do everything manually since the return value does not signal
+        // errno (it could be -1 as actual data)
+        clear_errno();
+        let data = unsafe { libc::ptrace(PEEKDATA, self.0, addr) as u64 };
+        let err = get_errno();
+        if err < 0 {
+            return Err(io::Error::from_raw_os_error(err));
         }
+        Ok(data)
     }
 
-    pub fn cont(&self, signal: c_uint) {
-        unsafe { libc::ptrace(CONT, self.0, 0u64, signal) };
+    pub fn pokedata(&self, addr: u64, data: u64) -> Result<()> {
+        self.ptrace(POKEDATA, addr as usize, data as usize)
     }
 
-    pub fn peekdata(&self, addr: u64) -> u64 {
-        unsafe { libc::ptrace(PEEKDATA, self.0, addr) as u64 }
-    }
-
-    pub fn pokedata(&self, addr: u64, data: u64) {
-        unsafe {
-            libc::ptrace(POKEDATA, self.0, addr, data);
-        }
-    }
-
-    pub fn wait(&self) -> WaitStatus {
+    pub fn wait(&self) -> Result<WaitStatus> {
         let mut status = 0;
-        unsafe { libc::waitpid(self.0, &mut status, 0) };
-        status.into()
+        let r = unsafe { libc::waitpid(self.0, &mut status, 0) };
+        errno_result(r as i64)?;
+        Ok(status.into())
     }
 
-    pub fn getregs(&self) -> user_regs_struct {
+    pub fn getregs(&self) -> Result<user_regs_struct> {
         let mut regs = MaybeUninit::uninit();
         let data = regs.as_mut_ptr() as usize;
-        unsafe {
-            libc::ptrace(
-                GETREGS, self.0, 0usize, // addr is ignored
-                data,
-            );
-        }
+        self.ptrace(GETREGS, 0 /* addr is ignored */, data)?;
         unsafe { regs.assume_init() }
     }
 
-    pub fn getreg(&self, r: Reg) -> u64 {
-        let regs = self.getregs();
-        r.get_reg(&regs)
+    pub fn getreg(&self, r: Reg) -> Result<u64> {
+        let regs = self.getregs()?;
+        Ok(r.get_reg(&regs))
     }
 
-    fn setregs(&self, regs: &user_regs_struct) {
+    fn setregs(&self, regs: &user_regs_struct) -> Result<()> {
         let data = regs as *const user_regs_struct as usize;
-        unsafe {
-            libc::ptrace(
-                SETREGS, self.0, 0usize, // addr is ignored
-                data,
-            );
-        }
+        self.ptrace(SETREGS, 0 /* addr is ignored  */, data)
     }
 
-    pub fn setreg(&self, r: Reg, val: u64) {
-        let mut regs = self.getregs();
+    pub fn setreg(&self, r: Reg, val: u64) -> Result<()> {
+        let mut regs = self.getregs()?;
         r.set_reg(&mut regs, val);
         self.setregs(&regs)
     }
 
-    pub fn singlestep(&self) {
-        unsafe {
-            libc::ptrace(
-                SINGLESTEP, self.0, 0u64, /* ignored */
-                0u64, /* ignored */
-            );
-        }
+    pub fn singlestep(&self) -> Result<()> {
+        self.ptrace(SINGLESTEP, 0 /* ignored */, 0 /* ignored */)
     }
 
-    pub fn getsiginfo(&self) -> libc::siginfo_t {
+    pub fn getsiginfo(&self) -> Result<libc::siginfo_t> {
         let mut info = MaybeUninit::uninit();
         let data = info.as_mut_ptr() as usize;
-        unsafe {
-            libc::ptrace(
-                GETSIGINFO, self.0, 0usize, // addr is ignored
-                data,
-            );
-        }
-        unsafe { info.assume_init() }
+        self.ptrace(GETSIGINFO, 0 /* addr is ignored */, data)?;
+        unsafe { Ok(info.assume_init()) }
     }
 }
