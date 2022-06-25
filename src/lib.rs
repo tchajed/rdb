@@ -189,12 +189,12 @@ impl Dbg {
         if code == SI_KERNEL || code == TRAP_BRKPT {
             let pc = self.get_pc() - 1;
             self.set_pc(pc);
-            let internal = if let Some(bp) = self.breakpoints.get(&pc) {
-                bp.source == BreakpointSource::Internal
-            } else {
-                false
-            };
-            if !internal {
+            let is_internal = self
+                .breakpoints
+                .get(&pc)
+                .map(|bp| bp.source == BreakpointSource::Internal)
+                .unwrap_or(false);
+            if !is_internal {
                 println!("hit breakpoint 0x{:x}", pc - self.load_addr);
             }
             let offset_pc = pc - self.load_addr;
