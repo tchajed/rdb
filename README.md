@@ -5,9 +5,11 @@ debuggers. The implementation follows along with [Writing a Linux
 Debugger](https://blog.tartanllama.xyz/writing-a-linux-debugger-setup/), porting the code over to Rust.
 
 The main dependencies used are the libc crate to interact with the kernel using
-`ptrace` (which is how the debugger controls the target process),
-[rustyline](https://crates.io/crates/rustyline/) to make the command-line input
-nicer to use, and clap to simplify parsing commands and arguments.
+`ptrace` (which is how the debugger controls the target process) and
+[gimli](https://crates.io/crates/gimli) for parsing debug info for source-level
+debugging. Rdb also uses [rustyline](https://crates.io/crates/rustyline/) to
+make the command-line input nicer to use, and clap to simplify parsing commands
+and arguments.
 
 Here's an interesting session with the debugger, running a simple "Hello, world"
 program ([test.rs](src/bin/test.rs)):
