@@ -1,5 +1,7 @@
 # rdb
 
+[![build](https://github.com/tchajed/rdb/actions/workflows/build.yaml/badge.svg)](https://github.com/tchajed/rdb/actions/workflows/build.yaml)
+
 A Linux debugger written in Rust. This is a project for learning Rust and about
 debuggers. The implementation follows along with [Writing a Linux
 Debugger](https://blog.tartanllama.xyz/writing-a-linux-debugger-setup/), porting the code over to Rust.
