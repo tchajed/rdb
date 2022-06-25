@@ -15,20 +15,33 @@ program ([test.rs](src/bin/test.rs)):
 ```
 $ cargo build
 $ ./target/debug/rdb ./target/debug/test
-debugging pid 73833
-rdb> break 0x55555555baf1
+debugging pid 208686
+rdb> break 0x79e0
+rdb> continue
+hit breakpoint 0x79e0
+/home/tchajed/rdb/src/bin/test.rs:
+   #[no_mangle]
+>  fn use_vars() {
+       let mut a: u64 = 3;
+rdb> next
+hit breakpoint 0x79e8
+/home/tchajed/rdb/src/bin/test.rs:
+   fn use_vars() {
+>      let mut a: u64 = 3;
+       let mut b: u64 = 2;
+rdb> finish
+hit breakpoint 0x7a19
+/home/tchajed/rdb/src/bin/test.rs:
+       use_vars();
+>      greeting();
+   }
+rdb> step
+/home/tchajed/rdb/src/bin/test.rs:
+   #[no_mangle]
+>  fn greeting() {
+       println!("Hello, world");
 rdb> continue
 Hello, world
-stopped at breakpoint
-rdb> register write rip 0x55555555bac4
-rdb> continue
-Hello, world
-stopped at breakpoint
-rdb> continue
 program exited
 rdb> quit
 ```
-
-The first breakpoint is just after `println!("Hello, world")`, so we see the
-program print. The `register write rip` command rewinds the instruction
-pointer, which causes the print to run again and reach the same breakpoint as before.
