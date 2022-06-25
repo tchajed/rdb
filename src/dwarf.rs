@@ -73,12 +73,10 @@ impl DbgInfo {
             Some(unit) => unit,
             None => return Ok(None),
         };
-        // Iterate over the Debugging Information Entries (DIEs) in the unit.
-        let mut depth = 0;
-        let mut entries = unit.entries();
 
-        while let Some((delta_depth, entry)) = entries.next_dfs()? {
-            depth += delta_depth;
+        // Iterate over the Debugging Information Entries (DIEs) in the unit.
+        let mut entries = unit.entries();
+        while let Some((_, entry)) = entries.next_dfs()? {
             if entry.tag() != gimli::DW_TAG_subprogram {
                 continue;
             }
@@ -87,6 +85,7 @@ impl DbgInfo {
                 return Ok(Some(range));
             }
         }
+
         Ok(None)
     }
 
@@ -114,19 +113,21 @@ impl DbgInfo {
         let mut units = self.ctx.dwarf().units();
         while let Some(header) = units.next()? {
             let unit = self.ctx.dwarf().unit(header)?;
-            let mut entries = unit.entries();
 
+            let mut entries = unit.entries();
             while let Some((_, entry)) = entries.next_dfs()? {
                 let attr = match entry.attr(gimli::DW_AT_name)? {
                     Some(attr) => attr,
                     None => continue,
                 };
-                if let Some(val) = attr.value().string_value(&self.ctx.dwarf().debug_str) {
-                    let name = val.to_string_lossy()?;
-                    if pred(&name) {
-                        let pc = at_low_pc(entry)?;
-                        return Ok(Some(pc));
-                    }
+                let val = match attr.value().string_value(&self.ctx.dwarf().debug_str) {
+                    Some(attr) => attr,
+                    None => continue,
+                };
+                let name = val.to_string_lossy()?;
+                if pred(&name) {
+                    let pc = at_low_pc(entry)?;
+                    return Ok(Some(pc));
                 }
             }
         }
