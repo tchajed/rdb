@@ -26,10 +26,17 @@ use ptrace::{Reg, WaitStatus};
 use source::{print_source, print_source_loc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BreakpointSource {
+    User,
+    Internal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Breakpoint {
     target: ptrace::Target,
     addr: u64,
     saved_data: Option<u8>,
+    source: BreakpointSource,
 }
 
 impl Breakpoint {
@@ -37,19 +44,20 @@ impl Breakpoint {
     // https://www.felixcloutier.com/x86/intn:into:int3:int1
     const INT3_INSTR: u8 = 0xcc;
 
-    pub fn new(target: ptrace::Target, addr: u64) -> Self {
+    fn new(target: ptrace::Target, addr: u64, source: BreakpointSource) -> Self {
         Self {
             target,
             addr,
             saved_data: None,
+            source,
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    fn enabled(&self) -> bool {
         self.saved_data.is_some()
     }
 
-    pub fn enable(&mut self) {
+    fn enable(&mut self) {
         assert!(!self.enabled(), "breakpoint is already enabled");
         let old_data = self.target.peekdata(self.addr);
         let saved = (old_data & 0xff) as u8;
@@ -58,7 +66,7 @@ impl Breakpoint {
         self.target.pokedata(self.addr, new_data);
     }
 
-    pub fn disable(&mut self) {
+    fn disable(&mut self) {
         assert!(self.enabled(), "breakpoint is not enabled");
         let old_data = self.target.peekdata(self.addr);
         let new_data = (old_data & (!0xffu64)) | (self.saved_data.unwrap() as u64);
@@ -93,7 +101,7 @@ impl TempBreakpoints {
 
     fn ensure_breakpoint(&mut self, dbg: &mut Dbg, addr: u64) {
         if !dbg.breakpoints.contains_key(&addr) {
-            dbg.set_breakpoint_at_address(addr);
+            dbg.set_breakpoint_at_address(addr, BreakpointSource::Internal);
             self.to_delete.push(addr);
         }
     }
@@ -181,7 +189,14 @@ impl Dbg {
         if code == SI_KERNEL || code == TRAP_BRKPT {
             let pc = self.get_pc() - 1;
             self.set_pc(pc);
-            println!("hit breakpoint 0x{:x}", pc - self.load_addr);
+            let internal = if let Some(bp) = self.breakpoints.get(&pc) {
+                bp.source == BreakpointSource::Internal
+            } else {
+                false
+            };
+            if !internal {
+                println!("hit breakpoint 0x{:x}", pc - self.load_addr);
+            }
             let offset_pc = pc - self.load_addr;
             let loc = self
                 .info
@@ -229,15 +244,17 @@ impl Dbg {
 
     fn set_user_breakpoint(&mut self, pc: u64) {
         // for now user breakpoints are not distinguished from internal ones
-        self.set_breakpoint_at_address(self.load_addr + pc);
+        self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
     }
 
     /// internal method to add a breakpoint
-    fn set_breakpoint_at_address(&mut self, addr: u64) {
+    fn set_breakpoint_at_address(&mut self, addr: u64, source: BreakpointSource) {
         let bp = self
             .breakpoints
             .entry(addr)
-            .or_insert_with(|| Breakpoint::new(self.target, addr));
+            .or_insert_with(|| Breakpoint::new(self.target, addr, source));
+        // TODO: ought to set bp.source to source if source if User (and then
+        // make sure it doesn't get cleaned up accidentally)
         if bp.enabled() {
             eprintln!("already have a breakpoint at 0x{:x}", addr - self.load_addr);
             return;

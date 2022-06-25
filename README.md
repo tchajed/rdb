@@ -26,13 +26,11 @@ hit breakpoint 0x79e0
 >  fn use_vars() {
        let mut a: u64 = 3;
 rdb> next
-hit breakpoint 0x79e8
 /home/tchajed/rdb/src/bin/test.rs:
    fn use_vars() {
 >      let mut a: u64 = 3;
        let mut b: u64 = 2;
 rdb> finish
-hit breakpoint 0x7a19
 /home/tchajed/rdb/src/bin/test.rs:
        use_vars();
 >      greeting();
