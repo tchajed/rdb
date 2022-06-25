@@ -149,6 +149,8 @@ impl Dbg {
         panic!("could not parse map file")
     }
 
+    /// Create a new debugger using a loaded object file for resolving symbols
+    /// and tracing a given target pid.
     pub fn new(file: object::File, pid: pid_t) -> Self {
         let info = DbgInfo::new(&file).expect("could not load dwarf file");
         let target = ptrace::Target::new(pid);
@@ -192,6 +194,7 @@ impl Dbg {
         }
     }
 
+    /// Resume execution until a breakpoint or the target terminates.
     pub fn continue_execution(&mut self) -> Result<(), io::Error> {
         self.step_over_breakpoint();
         self.target.cont(0)?;
@@ -223,6 +226,10 @@ impl Dbg {
         Ok(())
     }
 
+    /// Set a breakpoint based on address
+    ///
+    /// The pc here is an offset into the binary, not the actual program counter
+    /// (which will be offset by the load address).
     pub fn set_user_breakpoint(&mut self, pc: u64) {
         // for now user breakpoints are not distinguished from internal ones
         self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
@@ -243,6 +250,9 @@ impl Dbg {
         bp.enable();
     }
 
+    /// Disable a user breakpoint by address
+    ///
+    /// See [`set_user_breakpoint`](#set_user_breakpoint) for the interpretation of pc.
     pub fn disable_user_breakpoint(&mut self, pc: u64) {
         self.disable_breakpoint_at_address(self.load_addr + pc);
     }
@@ -259,6 +269,10 @@ impl Dbg {
         }
     }
 
+    /// Print all the target's registers.
+    ///
+    /// Excludes some extra x86-64 registers, like floating-pointer and vector
+    /// registers.
     pub fn dump_registers(&self) {
         let regs = self.target.getregs().unwrap();
         let width = ptrace::REGS.iter().map(|r| r.name.len()).max().unwrap();
@@ -268,11 +282,13 @@ impl Dbg {
         }
     }
 
+    /// Get the value of a single register.
     pub fn read_register(&self, r: Reg) {
         let val = self.target.getreg(r).unwrap();
         println!("0x{:x}", val);
     }
 
+    /// Set a register in the target.
     pub fn write_register(&self, r: Reg, val: u64) {
         self.target.setreg(r, val).unwrap();
     }
@@ -315,6 +331,7 @@ impl Dbg {
         }
     }
 
+    /// Run for a single instruction.
     pub fn single_step(&mut self) {
         self.single_step_instruction();
     }
@@ -386,6 +403,7 @@ impl Dbg {
         temp_bp.delete_all(self)
     }
 
+    /// Get the pid of the target being debugged.
     pub fn target_pid(&self) -> pid_t {
         self.target.pid()
     }

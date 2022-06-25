@@ -13,7 +13,7 @@ use object::Object;
 use rustyline::{error::ReadlineError, Editor};
 
 mod cli;
-mod debugger;
+pub mod debugger;
 mod dwarf;
 mod ptrace;
 mod source;
