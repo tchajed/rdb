@@ -1,11 +1,71 @@
+//! Get debug info from the binary's DWARF information.
+//!
+//! The implementation here is based on a combination of using addr2line where
+//! possible, using the libelfin source to figure out how to use gimli, and the
+//! [simple gimli
+//! example](https://github.com/gimli-rs/gimli/blob/master/examples/simple.rs)
+//! to understand how iteration works. The `addr2line` source code was also
+//! extremely useful for understanding gimli.
+
 #![allow(unused_variables)]
-use std::{borrow::Cow, ops::Range, rc::Rc};
+use std::{borrow::Cow, fmt, ops::Range, rc::Rc};
 
 use addr2line::Location;
 use gimli::{
     AttributeValue, DebuggingInformationEntry, Dwarf, EndianRcSlice, LittleEndian, Reader, Unit,
 };
-use object::{Object, ObjectSection};
+use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
+
+/// Identify the type of a symbol.
+///
+/// These names match the ELF standard.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SymbolType {
+    NoType,
+    Object,
+    Func,
+    Section,
+    File,
+}
+
+impl fmt::Display for SymbolType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SymbolType::NoType => "notype".fmt(f),
+            SymbolType::Object => "object".fmt(f),
+            SymbolType::Func => "func".fmt(f),
+            SymbolType::Section => "section".fmt(f),
+            SymbolType::File => "file".fmt(f),
+        }
+    }
+}
+
+/// Convert a generic object::SymbolKind to a SymbolType, mapping back to the
+/// ELF names.
+impl TryFrom<SymbolKind> for SymbolType {
+    type Error = String;
+    fn try_from(value: SymbolKind) -> Result<Self, Self::Error> {
+        use SymbolType::*;
+        match value {
+            SymbolKind::Null => Ok(NoType),
+            SymbolKind::Text => Ok(Func),
+            SymbolKind::Data => Ok(Object),
+            SymbolKind::Section => Ok(Section),
+            SymbolKind::File => Ok(File),
+            SymbolKind::Label => Err("unexpected label symbol".to_string()),
+            SymbolKind::Tls => Err("unsupported tls symbol".to_string()),
+            SymbolKind::Unknown => Ok(NoType),
+            _ => Err("other symbol kind".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Symbol {
+    pub type_: SymbolType,
+    pub name: String,
+    pub addr: u64,
+}
 
 type Die<'abbrev, 'unit, R> =
     DebuggingInformationEntry<'abbrev, 'unit, R, <R as gimli::Reader>::Offset>;
@@ -177,6 +237,7 @@ impl<'data> DbgInfo<'data> {
                         }
                     }
                 }
+                // file matches, now check line number
                 if let Some(this_line) = row.line() {
                     if this_line.get() as usize == line {
                         return Ok(Some(row.address()));
@@ -185,5 +246,28 @@ impl<'data> DbgInfo<'data> {
             }
         }
         Ok(None)
+    }
+
+    /// Find a symbol in the symbol table by name, gathering any matches
+    pub fn lookup_symbol(&self, name: &str) -> Vec<Symbol> {
+        let needle = name;
+        self.file
+            .symbols()
+            .filter_map(|sym| {
+                sym.name().ok().and_then(|name| {
+                    let name = addr2line::demangle(name, gimli::DW_LANG_Rust)
+                        .unwrap_or_else(|| name.to_string());
+                    if name != needle {
+                        return None;
+                    }
+                    // found a matching symbol
+                    sym.kind().try_into().ok().map(|type_| Symbol {
+                        type_,
+                        name,
+                        addr: sym.address(),
+                    })
+                })
+            })
+            .collect()
     }
 }

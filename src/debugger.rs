@@ -10,7 +10,7 @@ use libc::pid_t;
 use object::{Object, ObjectKind};
 use regex::Regex;
 
-use crate::dwarf::DbgInfo;
+use crate::dwarf::{self, DbgInfo};
 use crate::ptrace;
 use crate::source::{print_source, print_source_loc};
 use ptrace::{Reg, WaitStatus};
@@ -149,14 +149,18 @@ impl<'data> Dbg<'data> {
     /// Create a new debugger using a loaded object file for resolving symbols
     /// and tracing a given target pid.
     pub fn new(file: object::File<'data>, pid: pid_t) -> Self {
-        let load_addr = if file.kind() == ObjectKind::Dynamic {
+        let kind = file.kind();
+        let info = DbgInfo::new(file).expect("could not load dwarf file");
+        let target = ptrace::Target::new(pid);
+        target.wait().unwrap();
+
+        // make sure to get load address after waiting for target
+        let load_addr = if kind == ObjectKind::Dynamic {
             Self::get_load_address(pid).expect("could not get load address")
         } else {
             0
         };
-        let info = DbgInfo::new(file).expect("could not load dwarf file");
-        let target = ptrace::Target::new(pid);
-        target.wait().unwrap();
+
         Self {
             target,
             load_addr,
@@ -431,6 +435,10 @@ impl<'data> Dbg<'data> {
         self.continue_execution().unwrap();
 
         temp_bp.delete_all(self)
+    }
+
+    pub fn lookup_symbol(&self, name: &str) -> Vec<dwarf::Symbol> {
+        self.info.lookup_symbol(name)
     }
 
     /// Get the pid of the target being debugged.

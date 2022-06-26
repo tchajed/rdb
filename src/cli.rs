@@ -69,6 +69,11 @@ pub enum Command {
     Step,
     /// step over the next source line
     Next,
+    /// lookup a symbol
+    Symbol {
+        #[clap(value_parser)]
+        name: String,
+    },
     /// exit debugger
     Quit,
     /// print help message
