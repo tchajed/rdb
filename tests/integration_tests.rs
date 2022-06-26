@@ -110,3 +110,9 @@ fn test_function_step_in() {
     let out = run_rdb(&["break use_vars", "continue", "finish", "step", "quit"]);
     assert!(out.contains("fn greeting()"));
 }
+
+#[test]
+fn test_source_line() {
+    let out = run_rdb(&["break test.rs:12", "continue", "continue", "quit"]);
+    assert!(out.contains(">      let c = a + b"));
+}
