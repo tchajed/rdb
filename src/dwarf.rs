@@ -153,26 +153,29 @@ impl<'data> DbgInfo<'data> {
     where
         F: for<'a> Fn(&'a str) -> bool,
     {
-        let mut units = self.ctx.dwarf().units();
+        let dwarf = self.dwarf();
+        let mut units = dwarf.units();
         while let Some(header) = units.next()? {
-            let unit = self.ctx.dwarf().unit(header)?;
+            let unit = dwarf.unit(header)?;
             let mut rows = match unit.line_program.clone() {
                 Some(ilnp) => ilnp.rows(),
                 None => continue,
             };
             while let Some((header, row)) = rows.next_row()? {
+                // is_stmt marks the instructions the compiler thinks are the
+                // best places for a breakpoint
                 if !row.is_stmt() {
                     continue;
                 }
                 // TODO: could cache these checks based on the row.file_index()
-                if let Some(fe) = row.file(header) {
-                    let file = self.dwarf().attr_string(&unit, fe.path_name())?;
-                    let file = file.to_string()?;
-                    if !file_pred(&file) {
-                        continue;
+                match row.file(header) {
+                    None => continue,
+                    Some(fe) => {
+                        let file = dwarf.attr_string(&unit, fe.path_name())?;
+                        if !file_pred(&file.to_string()?) {
+                            continue;
+                        }
                     }
-                } else {
-                    continue;
                 }
                 if let Some(this_line) = row.line() {
                     if this_line.get() as usize == line {
