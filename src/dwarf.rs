@@ -5,7 +5,7 @@ use addr2line::Location;
 use gimli::{
     AttributeValue, DebuggingInformationEntry, Dwarf, EndianRcSlice, LittleEndian, Reader, Unit,
 };
-use object::{File, Object, ObjectSection};
+use object::{Object, ObjectSection};
 
 type Die<'abbrev, 'unit, R> =
     DebuggingInformationEntry<'abbrev, 'unit, R, <R as gimli::Reader>::Offset>;
@@ -42,25 +42,25 @@ fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
     Ok(low_pc..high_pc)
 }
 
-// fn unit_pc_range(unit: &Unit<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
-//     at_pc_range(unit.entries_tree(None)?.root()?.entry())
-// }
-
-// the gimli::Reader we use
+// the gimli::Reader we use (inherited from addr2line's default for
+// Context::from_dwarf)
 type R = EndianRcSlice<LittleEndian>;
 
 pub struct DbgInfo {
-    // an addr2line context
+    /// context for doing offset -> source lookups
     ctx: addr2line::Context<R>,
 }
 
 impl DbgInfo {
-    pub fn new(file: &File) -> gimli::Result<Self> {
+    pub fn new(file: &object::File) -> gimli::Result<Self> {
         let load_section = |id: gimli::SectionId| -> Result<R, gimli::Error> {
             let data = file
                 .section_by_name(id.name())
                 .and_then(|section| section.uncompressed_data().ok())
                 .unwrap_or(Cow::Borrowed(&[][..]));
+            // NOTE: I believe this actually copies all of the data for each
+            // section in order to initialize the Rc, that's why the R here is
+            // fully owned.
             Ok(R::new(Rc::from(&*data), LittleEndian))
         };
 
