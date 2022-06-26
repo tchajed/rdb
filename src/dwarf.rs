@@ -42,17 +42,18 @@ fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
     Ok(low_pc..high_pc)
 }
 
-// the gimli::Reader we use (inherited from addr2line's default for
-// Context::from_dwarf)
+// the gimli::Reader we use
 type R = EndianRcSlice<LittleEndian>;
 
-pub struct DbgInfo {
+pub struct DbgInfo<'data> {
+    /// underlying object file
+    file: object::File<'data>,
     /// context for doing offset -> source lookups
     ctx: addr2line::Context<R>,
 }
 
-impl DbgInfo {
-    pub fn new(file: &object::File) -> gimli::Result<Self> {
+impl<'data> DbgInfo<'data> {
+    pub fn new(file: object::File<'data>) -> gimli::Result<Self> {
         let load_section = |id: gimli::SectionId| -> Result<R, gimli::Error> {
             let data = file
                 .section_by_name(id.name())
@@ -67,7 +68,7 @@ impl DbgInfo {
         // Load all of the sections.
         let dwarf = gimli::Dwarf::load(&load_section)?;
         let ctx = addr2line::Context::from_dwarf(dwarf)?;
-        Ok(Self { ctx })
+        Ok(Self { file, ctx })
     }
 
     fn dwarf(&self) -> &Dwarf<R> {

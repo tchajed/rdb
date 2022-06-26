@@ -116,21 +116,17 @@ impl TempBreakpoints {
     }
 }
 
-pub struct Dbg {
+pub struct Dbg<'data> {
     target: ptrace::Target,
     load_addr: u64,
-    info: DbgInfo,
+    info: DbgInfo<'data>,
     running: bool,
     breakpoints: HashMap<u64, Breakpoint>,
 }
 
-impl Dbg {
-    fn get_load_address(file: &object::File, target: pid_t) -> Result<u64, io::Error> {
-        if file.kind() != ObjectKind::Dynamic {
-            return Ok(0);
-        }
-        let f =
-            fs::File::open(format!("/proc/{target}/maps")).expect("could not open memory mapping");
+impl<'data> Dbg<'data> {
+    fn get_load_address(pid: pid_t) -> Result<u64, io::Error> {
+        let f = fs::File::open(format!("/proc/{pid}/maps")).expect("could not open memory mapping");
         let f = io::BufReader::new(f);
         let re = Regex::new(
             r"(?P<start>[0-9a-f]*)-([0-9a-f]*) (?P<mode>[^ ]*) (?P<offset>[0-9a-f]*) ([^ ]*) ([^ ]*) *(?P<path>.*)",
@@ -152,11 +148,15 @@ impl Dbg {
 
     /// Create a new debugger using a loaded object file for resolving symbols
     /// and tracing a given target pid.
-    pub fn new(file: object::File, pid: pid_t) -> Self {
-        let info = DbgInfo::new(&file).expect("could not load dwarf file");
+    pub fn new(file: object::File<'data>, pid: pid_t) -> Self {
+        let load_addr = if file.kind() == ObjectKind::Dynamic {
+            Self::get_load_address(pid).expect("could not get load address")
+        } else {
+            0
+        };
+        let info = DbgInfo::new(file).expect("could not load dwarf file");
         let target = ptrace::Target::new(pid);
         target.wait().unwrap();
-        let load_addr = Self::get_load_address(&file, pid).expect("could not get load address");
         Self {
             target,
             load_addr,
