@@ -116,3 +116,9 @@ fn test_source_line() {
     let out = run_rdb(&["break test.rs:12", "continue", "continue", "quit"]);
     assert!(out.contains(">      let c = a + b"));
 }
+
+#[test]
+fn test_symbol_lookup() {
+    let out = run_rdb(&["symbol use_vars", "quit"]);
+    assert!(out.contains("func use_vars"));
+}
