@@ -2,7 +2,9 @@
 use std::{borrow::Cow, ops::Range, rc::Rc};
 
 use addr2line::Location;
-use gimli::{AttributeValue, DebuggingInformationEntry, EndianRcSlice, LittleEndian, Reader};
+use gimli::{
+    AttributeValue, DebuggingInformationEntry, Dwarf, EndianRcSlice, LittleEndian, Reader, Unit,
+};
 use object::{File, Object, ObjectSection};
 
 type Die<'abbrev, 'unit, R> =
@@ -68,6 +70,19 @@ impl DbgInfo {
         Ok(Self { ctx })
     }
 
+    fn dwarf(&self) -> &Dwarf<R> {
+        self.ctx.dwarf()
+    }
+
+    fn at_name<'a>(&self, unit: &'a Unit<R>, die: &'a Die<R>) -> gimli::Result<Option<R>> {
+        let attr = match die.attr(gimli::DW_AT_name)? {
+            Some(attr) => attr,
+            None => return Ok(None),
+        };
+        let val = self.dwarf().attr_string(unit, attr.value())?;
+        Ok(Some(val))
+    }
+
     fn get_function_range_from_pc(&self, pc: u64) -> Result<Option<Range<u64>>, gimli::Error> {
         let unit = match self.ctx.find_dwarf_unit(pc) {
             Some(unit) => unit,
@@ -116,18 +131,52 @@ impl DbgInfo {
 
             let mut entries = unit.entries();
             while let Some((_, entry)) = entries.next_dfs()? {
-                let attr = match entry.attr(gimli::DW_AT_name)? {
-                    Some(attr) => attr,
+                let name = match self.at_name(&unit, entry)? {
+                    Some(name) => name,
                     None => continue,
                 };
-                let val = match attr.value().string_value(&self.ctx.dwarf().debug_str) {
-                    Some(attr) => attr,
-                    None => continue,
-                };
-                let name = val.to_string_lossy()?;
-                if pred(&name) {
+                if pred(&name.to_string()?) {
                     let pc = at_low_pc(entry)?;
                     return Ok(Some(pc));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn pc_for_source_loc<F>(
+        &self,
+        file_pred: F,
+        line: usize,
+    ) -> Result<Option<u64>, gimli::Error>
+    where
+        F: for<'a> Fn(&'a str) -> bool,
+    {
+        let mut units = self.ctx.dwarf().units();
+        while let Some(header) = units.next()? {
+            let unit = self.ctx.dwarf().unit(header)?;
+            let mut rows = match unit.line_program.clone() {
+                Some(ilnp) => ilnp.rows(),
+                None => continue,
+            };
+            while let Some((header, row)) = rows.next_row()? {
+                if !row.is_stmt() {
+                    continue;
+                }
+                // TODO: could cache these checks based on the row.file_index()
+                if let Some(fe) = row.file(header) {
+                    let file = self.dwarf().attr_string(&unit, fe.path_name())?;
+                    let file = file.to_string()?;
+                    if !file_pred(&file) {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+                if let Some(this_line) = row.line() {
+                    if this_line.get() as usize == line {
+                        return Ok(Some(row.address()));
+                    }
                 }
             }
         }

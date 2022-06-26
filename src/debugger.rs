@@ -251,6 +251,19 @@ impl Dbg {
         bp.enable();
     }
 
+    /// Set a breakpoint by source location (file and line number)
+    pub fn set_breakpoint_at_source_location(&mut self, file: &str, line: usize) {
+        if let Some(pc) = self
+            .info
+            .pc_for_source_loc(|path| path.ends_with(file), line)
+            .expect("could not lookup source")
+        {
+            self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
+        } else {
+            eprintln!("could not find {}:{}", file, line);
+        }
+    }
+
     /// Set a breakpoint at a function's start, by name.
     pub fn set_breakpoint_at_function(&mut self, needle: &str) {
         let pc = self

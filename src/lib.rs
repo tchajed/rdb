@@ -26,7 +26,9 @@ fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
         Command::Continue => dbg.continue_execution().expect("continue failed"),
         Command::Break { loc } => match loc {
             BreakpointLoc::Addr { pc } => dbg.set_user_breakpoint(pc),
-            BreakpointLoc::Line { file: _, line: _ } => unimplemented!("source lookup"),
+            BreakpointLoc::Line { file, line } => {
+                dbg.set_breakpoint_at_source_location(&file, line)
+            }
             BreakpointLoc::Function { name } => dbg.set_breakpoint_at_function(&name),
         },
         Command::Disable { pc } => dbg.disable_user_breakpoint(pc),
