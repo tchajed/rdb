@@ -10,7 +10,6 @@ default-run = "rdb"
 [dependencies]
 addr2line = "0.17.0"
 clap = { version = "3.2.6", features = ["derive"] }
-clap-num = "1.0.0"
 console = "0.15.0"
 gimli = { version = "0.26.1", default_features = false, features = ["std", "read"] }
 libc = "0.2.126"

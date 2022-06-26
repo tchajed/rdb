@@ -1,10 +1,21 @@
 use clap::{IntoApp, Parser, Subcommand};
-use clap_num::maybe_hex;
 
 use crate::ptrace::Reg;
 
 fn parse_reg(s: &str) -> Result<Reg, String> {
     s.try_into()
+}
+
+#[allow(clippy::from_str_radix_10)]
+fn maybe_hex(s: &str) -> Result<u64, String> {
+    let r = if let Some(s) = s.strip_prefix("0x") {
+        u64::from_str_radix(s, 16)
+    } else if let Some(s) = s.strip_prefix("0b") {
+        u64::from_str_radix(s, 2)
+    } else {
+        u64::from_str_radix(s, 10)
+    };
+    r.map_err(|e| e.to_string())
 }
 
 #[derive(Parser)]
@@ -55,7 +66,7 @@ pub enum Command {
     },
     /// delete a breakpoint
     Disable {
-        #[clap(value_parser = maybe_hex::<u64>)]
+        #[clap(value_parser = maybe_hex)]
         pc: u64,
     },
     /// interact with registers
@@ -93,7 +104,7 @@ pub enum RegisterCommand {
     Write {
         #[clap(value_parser = parse_reg)]
         reg: Reg,
-        #[clap(value_parser = maybe_hex::<u64>)]
+        #[clap(value_parser = maybe_hex)]
         val: u64,
     },
 }

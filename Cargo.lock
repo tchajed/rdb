@@ -84,15 +84,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-num"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea589d838669bcc85ffc6126784601e61064951d206dde84895ff82a2ef8f056"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "clap_derive"
 version = "3.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,15 +376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num-traits"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "578ede34cf02f8924ab9447f50c28075b4d3e5b269972345e7e0372b38c6cdcd"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "object"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -483,7 +465,6 @@ version = "0.1.0"
 dependencies = [
  "addr2line",
  "clap",
- "clap-num",
  "console",
  "gimli",
  "libc",
