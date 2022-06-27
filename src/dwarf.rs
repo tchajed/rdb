@@ -223,7 +223,6 @@ mod ret_addr {
 }
 
 pub struct FrameInfo<'a, R: Reader> {
-    pub addr: u64,
     pub comp_dir: Option<Cow<'a, str>>,
     pub file: Option<&'a str>,
     pub line: Option<u32>,
@@ -232,10 +231,23 @@ pub struct FrameInfo<'a, R: Reader> {
 
 impl<'a, R: Reader> FrameInfo<'a, R> {
     pub fn inner_function(&self) -> Option<Cow<str>> {
-        self.frames[0]
-            .function
-            .as_ref()
-            .map(|f| f.demangle().unwrap())
+        self.frames
+            .first()
+            .and_then(|f| f.function.as_ref().map(|f| f.demangle().unwrap()))
+    }
+
+    pub fn file_suffix_or<'b>(&'b self, default: &'b str) -> &'b str {
+        match (self.comp_dir.as_ref(), self.file) {
+            (_, None) => default,
+            (Some(dir), Some(f)) => f.strip_prefix(&format!("{dir}/")).unwrap_or(f),
+            (_, Some(f)) => f,
+        }
+    }
+
+    pub fn line_or(&self, default: &str) -> String {
+        self.line
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| default.to_string())
     }
 }
 
@@ -341,7 +353,6 @@ impl<'data> DbgInfo<'data> {
             .and_then(|unit| unit.comp_dir.as_ref().map(|dir| dir.to_string().unwrap()));
         let frames = self.ctx.find_frames(pc)?.collect()?;
         Ok(FrameInfo {
-            addr: pc,
             comp_dir,
             file,
             line,

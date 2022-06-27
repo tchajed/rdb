@@ -457,15 +457,48 @@ impl<'data> Dbg<'data> {
     }
 
     pub fn backtrace(&self) {
-        let pc = self.get_offset_pc() - 1;
-        let addr = self
-            .info
-            .get_unwind_return_address(pc, self.target)
-            .expect("could not get ra");
-        if let Some(addr) = addr {
-            println!("return address: 0x{:x}", addr);
+        let mut pc = self.get_offset_pc();
+        let mut frame_num = 1;
+        loop {
+            if let Ok(frame) = self.info.frame_for_pc(pc) {
+                println!(
+                    "frame #{frame_num} at 0x{pc:x}, file {file} at line {line} (in {func})",
+                    file = frame.file_suffix_or("??"),
+                    line = frame.line_or("??"),
+                    func = frame.inner_function().unwrap_or(Cow::Borrowed("??"))
+                );
+                match frame.frames.last() {
+                    // aren't in a function, should probably stop backtracing
+                    None => return,
+                    Some(frame) => {
+                        // check if we reached the main function
+                        if let Some(f) = &frame.function {
+                            let name = f.demangle().unwrap();
+                            if name == "main" || name.ends_with("::main") {
+                                return;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // no frame info
+                println!("frame #{frame_num} at 0x{pc:x}");
+            }
+            let addr = match self
+                .info
+                .get_unwind_return_address(pc, self.target)
+                .expect("could not get ra")
+            {
+                Some(addr) => addr,
+                None => return,
+            };
+            if addr < self.load_addr {
+                // bogus return address, debug info must be wrong?
+                return;
+            }
+            pc = addr - self.load_addr;
+            frame_num += 1;
         }
-        eprintln!("proper backtrace not yet implemented")
     }
 
     /// Get the pid of the target being debugged.
