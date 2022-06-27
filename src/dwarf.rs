@@ -73,17 +73,14 @@ pub struct Symbol {
 type Die<'abbrev, 'unit, R> =
     DebuggingInformationEntry<'abbrev, 'unit, R, <R as gimli::Reader>::Offset>;
 
-fn at_low_pc<R: gimli::Reader>(die: &Die<R>) -> gimli::Result<u64> {
-    let low_pc = die
-        .attr(gimli::DW_AT_low_pc)?
-        .map(|attr| {
-            if let AttributeValue::Addr(a) = attr.value() {
-                a
-            } else {
-                panic!("invalid low pc type")
-            }
-        })
-        .unwrap_or(0);
+fn at_low_pc<R: gimli::Reader>(die: &Die<R>) -> gimli::Result<Option<u64>> {
+    let low_pc = die.attr(gimli::DW_AT_low_pc)?.map(|attr| {
+        if let AttributeValue::Addr(a) = attr.value() {
+            a
+        } else {
+            panic!("invalid low pc type")
+        }
+    });
     Ok(low_pc)
 }
 
@@ -97,7 +94,7 @@ fn at_high_pc(low_pc: u64, high_pc: AttributeValue<impl gimli::Reader>) -> u64 {
 }
 
 fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
-    let low_pc = at_low_pc(die)?;
+    let low_pc = at_low_pc(die)?.unwrap_or(0);
     let high_pc = die
         .attr(gimli::DW_AT_high_pc)?
         .map(|a| at_high_pc(low_pc, a.value()))
@@ -307,7 +304,10 @@ impl<'data> DbgInfo<'data> {
     fn get_function_range_from_pc(&self, pc: u64) -> Result<Option<Range<u64>>, gimli::Error> {
         let unit = match self.ctx.find_dwarf_unit(pc) {
             Some(unit) => unit,
-            None => return Ok(None),
+            None => {
+                eprintln!("could not find unit for 0x{pc:x}");
+                return Ok(None);
+            }
         };
 
         // Iterate over the Debugging Information Entries (DIEs) in the unit.
@@ -334,6 +334,9 @@ impl<'data> DbgInfo<'data> {
         let iter = self.ctx.find_location_range(range.start, range.end)?;
         for (start, end, loc) in iter {
             locs.push(start);
+        }
+        if locs.is_empty() {
+            return Ok(vec![range.start]);
         }
         Ok(locs)
     }
@@ -371,13 +374,17 @@ impl<'data> DbgInfo<'data> {
 
             let mut entries = unit.entries();
             while let Some((_, entry)) = entries.next_dfs()? {
+                if entry.tag() != gimli::DW_TAG_subprogram {
+                    continue;
+                }
                 let name = match self.at_name(&unit, entry)? {
                     Some(name) => name,
                     None => continue,
                 };
-                if pred(&name.to_string()?) {
-                    let pc = at_low_pc(entry)?;
-                    return Ok(Some(pc));
+                let name = &name.to_string()?;
+                if pred(name) {
+                    let low_pc = at_low_pc(entry)?;
+                    return Ok(low_pc);
                 }
             }
         }
@@ -453,6 +460,7 @@ impl<'data> DbgInfo<'data> {
     /// Get the debug info on the return address from a particular pc.
     ///
     /// Returns only the information on how to get the return address, not the actual value.
+    #[allow(dead_code)]
     pub fn get_unwind_return_address(
         &self,
         pc: u64,

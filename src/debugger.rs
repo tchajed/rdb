@@ -385,6 +385,12 @@ impl<'data> Dbg<'data> {
         self.single_step_instruction();
     }
 
+    fn get_prev_frame(&self, fp: u64) -> (u64, u64) {
+        let frame_pointer = self.target.peekdata(fp).unwrap();
+        let return_addr = self.target.peekdata(fp + 8).unwrap();
+        (frame_pointer, return_addr)
+    }
+
     fn get_current_return_address(&self) -> u64 {
         let frame_pointer = self.target.getreg(Reg::Rbp).unwrap();
         self.target.peekdata(frame_pointer + 8).unwrap()
@@ -456,47 +462,42 @@ impl<'data> Dbg<'data> {
         self.info.lookup_symbol(name)
     }
 
+    /// returns true if we should stop continuing
+    fn backtrace_print_frame(&self, frame_num: usize, pc: u64) -> bool {
+        if let Ok(frame) = self.info.frame_for_pc(pc) {
+            println!(
+                "frame #{frame_num} at 0x{pc:x}, file {file} at line {line} (in {func})",
+                file = frame.file_suffix_or("??"),
+                line = frame.line_or("??"),
+                func = frame.inner_function().unwrap_or(Cow::Borrowed("??"))
+            );
+            match frame.frames.last() {
+                None => return true,
+                Some(frame) => {
+                    // check if we reached the main function
+                    if let Some(f) = &frame.function {
+                        let name = f.demangle().unwrap();
+                        return name == "main" || name.ends_with("::main");
+                    }
+                    return false;
+                }
+            }
+        } else {
+            // no frame info
+            println!("frame #{frame_num} at 0x{pc:x}");
+            return true;
+        }
+    }
+
     pub fn backtrace(&self) {
         let mut pc = self.get_offset_pc();
+        let mut fp = self.target.getreg(Reg::Rbp).unwrap();
         let mut frame_num = 1;
-        loop {
-            if let Ok(frame) = self.info.frame_for_pc(pc) {
-                println!(
-                    "frame #{frame_num} at 0x{pc:x}, file {file} at line {line} (in {func})",
-                    file = frame.file_suffix_or("??"),
-                    line = frame.line_or("??"),
-                    func = frame.inner_function().unwrap_or(Cow::Borrowed("??"))
-                );
-                match frame.frames.last() {
-                    // aren't in a function, should probably stop backtracing
-                    None => return,
-                    Some(frame) => {
-                        // check if we reached the main function
-                        if let Some(f) = &frame.function {
-                            let name = f.demangle().unwrap();
-                            if name == "main" || name.ends_with("::main") {
-                                return;
-                            }
-                        }
-                    }
-                }
-            } else {
-                // no frame info
-                println!("frame #{frame_num} at 0x{pc:x}");
-            }
-            let addr = match self
-                .info
-                .get_unwind_return_address(pc, self.target)
-                .expect("could not get ra")
-            {
-                Some(addr) => addr,
-                None => return,
-            };
-            if addr < self.load_addr {
-                // bogus return address, debug info must be wrong?
-                return;
-            }
-            pc = addr - self.load_addr;
+        let mut done = false;
+        while !done {
+            done = self.backtrace_print_frame(frame_num, pc);
+            (fp, pc) = self.get_prev_frame(fp);
+            pc -= self.load_addr;
             frame_num += 1;
         }
     }

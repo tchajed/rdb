@@ -13,7 +13,25 @@ fn use_vars() {
     a = 4;
 }
 
+fn a() {
+    // stop here
+}
+
+fn b() {
+    a();
+}
+
+fn c() {
+    a();
+}
+
+fn call_little_functions() {
+    b();
+    c();
+}
+
 fn main() {
     use_vars();
     greeting();
+    call_little_functions();
 }
