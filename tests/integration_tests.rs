@@ -114,7 +114,7 @@ fn function_step_in() {
 
 #[test]
 fn source_line() {
-    let out = run_rdb(&["break test.rs:12", "continue", "continue", "quit"]);
+    let out = run_rdb(&["break test.rs:6", "continue", "continue", "quit"]);
     assert!(out.contains(">      let c = a + b"));
 }
 
@@ -129,7 +129,7 @@ fn breakpoint_info() {
     let out = run_rdb(&["break greeting", "q"]);
     assert!(out.contains("set breakpoint"));
     assert!(out.contains("file src/bin/test.rs"));
-    assert!(out.contains("line 5"));
+    assert!(out.contains("line 12"));
 }
 
 #[test]
