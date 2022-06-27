@@ -1,5 +1,6 @@
 #![allow(clippy::needless_return)]
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fs,
     io::{self, BufRead},
@@ -237,25 +238,17 @@ impl<'data> Dbg<'data> {
     /// (which will be offset by the load address).
     pub fn set_user_breakpoint(&mut self, pc: u64) {
         self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
-        if let Ok(Some(source)) = self.info.source_for_pc(pc) {
-            let file = match source.file {
-                None => return,
-                Some(path) => {
-                    if let Some(dir) = self.info.compilation_dir(pc) {
-                        path.strip_prefix(&format!("{dir}/")).unwrap_or(path)
-                    } else {
-                        path
-                    }
-                }
-            };
-            let line = source.line.unwrap();
-            let func_info = match self.info.function_for_pc(pc) {
-                Ok(Some(func)) => {
-                    format!(" (in {})", func)
-                }
-                _ => "".to_string(),
-            };
-            println!("set breakpoint at 0x{pc:x}: file {file}, line {line}{func_info}",);
+        if let Ok(mut frame) = self.info.frame_for_pc(pc) {
+            let path = frame.file.take().unwrap_or("??");
+            let dir = frame.comp_dir.take().unwrap_or(Cow::Borrowed(""));
+            let file = path.strip_prefix(&format!("{dir}/")).unwrap_or(path);
+            let line = frame
+                .line
+                .take()
+                .map(|l| l.to_string())
+                .unwrap_or_else(|| "??".to_string());
+            let func = frame.inner_function().unwrap_or(Cow::Borrowed("??"));
+            println!("set breakpoint at 0x{pc}: file {file}, line {line} (in {func})");
         }
     }
 
@@ -472,7 +465,7 @@ impl<'data> Dbg<'data> {
         if let Some(addr) = addr {
             println!("return address: 0x{:x}", addr);
         }
-        eprintln!("actual backtrace not yet implemented");
+        eprintln!("proper backtrace not yet implemented")
     }
 
     /// Get the pid of the target being debugged.

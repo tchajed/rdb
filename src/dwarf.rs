@@ -10,7 +10,7 @@
 #![allow(unused_variables)]
 use std::{borrow::Cow, fmt, ops::Range, rc::Rc};
 
-use addr2line::Location;
+use addr2line::{fallible_iterator::FallibleIterator, Location};
 use gimli::{
     AttributeValue, BaseAddresses, DebuggingInformationEntry, Dwarf, EhFrame, EndianRcSlice,
     EndianSlice, LittleEndian, Reader, Register, Unit, UnwindContext, UnwindSection,
@@ -222,6 +222,23 @@ mod ret_addr {
     }
 }
 
+pub struct FrameInfo<'a, R: Reader> {
+    pub addr: u64,
+    pub comp_dir: Option<Cow<'a, str>>,
+    pub file: Option<&'a str>,
+    pub line: Option<u32>,
+    pub frames: Vec<addr2line::Frame<'a, R>>,
+}
+
+impl<'a, R: Reader> FrameInfo<'a, R> {
+    pub fn inner_function(&self) -> Option<Cow<str>> {
+        self.frames[0]
+            .function
+            .as_ref()
+            .map(|f| f.demangle().unwrap())
+    }
+}
+
 impl<'data> DbgInfo<'data> {
     pub fn new(file: object::File<'data>) -> gimli::Result<Self> {
         let load_section = |id: gimli::SectionId| -> Result<R, gimli::Error> {
@@ -313,23 +330,23 @@ impl<'data> DbgInfo<'data> {
         self.ctx.find_location(pc)
     }
 
-    pub fn compilation_dir(&self, pc: u64) -> Option<String> {
-        self.ctx.find_dwarf_unit(pc).and_then(|unit| {
-            unit.comp_dir.as_ref().map(|dir| {
-                let dir = dir.to_string().unwrap();
-                dir.to_string()
-            })
+    pub fn frame_for_pc(&self, pc: u64) -> Result<FrameInfo<'_, R>, gimli::Error> {
+        let loc = self.source_for_pc(pc)?;
+        let loc = loc.as_ref();
+        let file = loc.and_then(|loc| loc.file);
+        let line = loc.and_then(|loc| loc.line);
+        let comp_dir = self
+            .ctx
+            .find_dwarf_unit(pc)
+            .and_then(|unit| unit.comp_dir.as_ref().map(|dir| dir.to_string().unwrap()));
+        let frames = self.ctx.find_frames(pc)?.collect()?;
+        Ok(FrameInfo {
+            addr: pc,
+            comp_dir,
+            file,
+            line,
+            frames,
         })
-    }
-
-    pub fn function_for_pc(&self, pc: u64) -> Result<Option<String>, gimli::Error> {
-        let frame = self.ctx.find_frames(pc)?.next()?.unwrap();
-        let f = match frame.function {
-            Some(f) => f,
-            None => return Ok(None),
-        };
-        let name = f.name.to_string_lossy()?;
-        Ok(Some(name.to_string()))
     }
 
     pub fn pc_for_function_pred<F>(&self, pred: F) -> Result<Option<u64>, gimli::Error>
@@ -337,6 +354,7 @@ impl<'data> DbgInfo<'data> {
         F: for<'a> Fn(&'a str) -> bool,
     {
         let mut units = self.ctx.dwarf().units();
+
         while let Some(header) = units.next()? {
             let unit = self.ctx.dwarf().unit(header)?;
 
