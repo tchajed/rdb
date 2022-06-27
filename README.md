@@ -19,18 +19,18 @@ program ([test.rs](src/bin/test.rs)):
 ```
 $ cargo build
 $ ./target/debug/rdb ./target/debug/test
-debugging pid 378824
+debugging pid 392654
 rdb> break use_vars
-set breakpoint at 0x31624: file src/bin/test.rs, line 10 (in use_vars)
+set breakpoint at 0x31560: file src/bin/test.rs, line 4 (in use_vars)
 rdb> continue
-hit breakpoint 0x7b88
+hit breakpoint 0x7b48
 /home/tchajed/rdb/src/bin/test.rs:
    fn use_vars() {
 >      let mut a: u64 = 3;
        let mut b: u64 = 2;
 rdb> bt
-frame #1 at 0x7b88, file src/bin/test.rs at line 10 (in use_vars)
-frame #2 at 0x7bf9, file src/bin/test.rs at line 35 (in test::main)
+frame #1 at 0x7b48, file src/bin/test.rs at line 4 (in use_vars)
+frame #2 at 0x7bf9, file src/bin/test.rs at line 34 (in test::main)
 rdb> next
 /home/tchajed/rdb/src/bin/test.rs:
        let mut a: u64 = 3;
