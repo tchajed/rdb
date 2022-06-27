@@ -126,14 +126,14 @@ mod ret_addr {
 
     use crate::ptrace::{self, Reg};
 
-    fn dwarf_to_reg(dwarf_r: usize) -> Result<Reg, String> {
+    fn dwarf_to_reg(dwarf_r: gimli::Register) -> Result<Reg, String> {
         #[derive(Debug)]
         struct RegDescriptor {
             reg: Reg,
-            dwarf_r: usize,
+            dwarf_r: u16,
         }
 
-        const fn desc(reg: Reg, dwarf_r: usize) -> RegDescriptor {
+        const fn desc(reg: Reg, dwarf_r: u16) -> RegDescriptor {
             RegDescriptor { reg, dwarf_r }
         }
 
@@ -167,6 +167,8 @@ mod ret_addr {
             desc(Reg::Gs, 5),
         ];
 
+        let dwarf_r = dwarf_r.0;
+
         REGS.iter()
             .find(|r| r.dwarf_r == dwarf_r)
             .map(|r| r.reg)
@@ -188,7 +190,7 @@ mod ret_addr {
         pub fn evaluate<E: ReturnAddrEvaluator>(&self, eval: E) -> u64 {
             let cfa: u64 = match self.cfa {
                 CfaRule::RegisterAndOffset { register, offset } => {
-                    let reg = dwarf_to_reg(register.0 as usize).expect("unexpected dwarf register");
+                    let reg = dwarf_to_reg(register).expect("unexpected dwarf register");
                     ((eval.get_reg(reg) as i64) + offset) as u64
                 }
                 CfaRule::Expression(_) => unimplemented!("evaluating dwarf expressions for unwind"),
@@ -199,8 +201,8 @@ mod ret_addr {
                     eval.read_mem(a)
                 }
                 RegisterRule::ValOffset(n) => (cfa as i64 + n) as u64,
-                RegisterRule::Register(r) => {
-                    let reg = dwarf_to_reg(r.0 as usize).expect("unexpected dwarf register");
+                RegisterRule::Register(register) => {
+                    let reg = dwarf_to_reg(register).expect("unexpected dwarf register");
                     eval.get_reg(reg)
                 }
                 _ => unimplemented!("unsupported register rule {:?}", self.ra),
