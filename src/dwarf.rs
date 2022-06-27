@@ -126,47 +126,47 @@ mod ret_addr {
 
     use crate::ptrace::{self, Reg};
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct RegDescriptor {
-        pub reg: Reg,
-        pub dwarf_r: usize,
-    }
-
-    const fn desc(reg: Reg, dwarf_r: usize) -> RegDescriptor {
-        RegDescriptor { reg, dwarf_r }
-    }
-
-    const REGS: [RegDescriptor; 27] = [
-        desc(Reg::R15, 5),
-        desc(Reg::R14, 4),
-        desc(Reg::R13, 3),
-        desc(Reg::R12, 2),
-        desc(Reg::Rbp, 6),
-        desc(Reg::Rbx, 3),
-        desc(Reg::R11, 1),
-        desc(Reg::R10, 0),
-        desc(Reg::R9, 9),
-        desc(Reg::R8, 8),
-        desc(Reg::Rax, 0),
-        desc(Reg::Rcx, 2),
-        desc(Reg::Rdx, 1),
-        desc(Reg::Rsi, 4),
-        desc(Reg::Rdi, 5),
-        desc(Reg::Orig_rax, 1),
-        desc(Reg::Rip, 1),
-        desc(Reg::Cs, 1),
-        desc(Reg::Rflags, 9),
-        desc(Reg::Rsp, 7),
-        desc(Reg::Ss, 2),
-        desc(Reg::Fs_base, 8),
-        desc(Reg::Gs_base, 9),
-        desc(Reg::Ds, 3),
-        desc(Reg::Es, 0),
-        desc(Reg::Fs, 4),
-        desc(Reg::Gs, 5),
-    ];
-
     fn dwarf_to_reg(dwarf_r: usize) -> Result<Reg, String> {
+        #[derive(Debug)]
+        struct RegDescriptor {
+            reg: Reg,
+            dwarf_r: usize,
+        }
+
+        const fn desc(reg: Reg, dwarf_r: usize) -> RegDescriptor {
+            RegDescriptor { reg, dwarf_r }
+        }
+
+        const REGS: [RegDescriptor; 27] = [
+            desc(Reg::R15, 5),
+            desc(Reg::R14, 4),
+            desc(Reg::R13, 3),
+            desc(Reg::R12, 2),
+            desc(Reg::Rbp, 6),
+            desc(Reg::Rbx, 3),
+            desc(Reg::R11, 1),
+            desc(Reg::R10, 0),
+            desc(Reg::R9, 9),
+            desc(Reg::R8, 8),
+            desc(Reg::Rax, 0),
+            desc(Reg::Rcx, 2),
+            desc(Reg::Rdx, 1),
+            desc(Reg::Rsi, 4),
+            desc(Reg::Rdi, 5),
+            desc(Reg::Orig_rax, 1),
+            desc(Reg::Rip, 1),
+            desc(Reg::Cs, 1),
+            desc(Reg::Rflags, 9),
+            desc(Reg::Rsp, 7),
+            desc(Reg::Ss, 2),
+            desc(Reg::Fs_base, 8),
+            desc(Reg::Gs_base, 9),
+            desc(Reg::Ds, 3),
+            desc(Reg::Es, 0),
+            desc(Reg::Fs, 4),
+            desc(Reg::Gs, 5),
+        ];
+
         REGS.iter()
             .find(|r| r.dwarf_r == dwarf_r)
             .map(|r| r.reg)
