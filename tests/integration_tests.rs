@@ -131,3 +131,12 @@ fn breakpoint_info() {
     assert!(out.contains("file src/bin/test.rs"));
     assert!(out.contains("line 5"));
 }
+
+#[test]
+fn backtrace() {
+    let out = run_rdb(&["break a", "c", "bt"]);
+    assert!(out.contains("test::a"));
+    assert!(out.contains("test::b"));
+    assert!(out.contains("test::call_little_functions"));
+    assert!(out.contains("test::main"));
+}
