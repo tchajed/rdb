@@ -92,6 +92,9 @@ pub enum Command {
     /// print a backtrace
     #[clap(alias = "bt")]
     Backtrace,
+    /// get information
+    #[clap(subcommand)]
+    Info(InfoCommand),
     /// exit debugger
     #[clap(alias = "q")]
     Quit,
@@ -116,6 +119,14 @@ pub enum RegisterCommand {
         #[clap(value_parser = maybe_hex)]
         val: u64,
     },
+}
+
+#[derive(Subcommand)]
+pub enum InfoCommand {
+    /// print all the currently set breakpoints
+    Breakpoints,
+    /// synonym for backtrace command
+    Backtrace,
 }
 
 pub fn parse_line(line: &str) -> Result<Command, clap::Error> {

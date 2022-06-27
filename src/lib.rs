@@ -18,7 +18,7 @@ mod dwarf;
 mod ptrace;
 mod source;
 
-use cli::{BreakpointLoc, Command, RegisterCommand};
+use cli::{BreakpointLoc, Command, InfoCommand, RegisterCommand};
 use debugger::Dbg;
 
 fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
@@ -47,7 +47,11 @@ fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
                 println!("{} {} 0x{:x}", sym.type_, sym.name, sym.addr);
             }
         }
-        Command::Backtrace => dbg.backtrace(),
+        Command::Backtrace => dbg.print_backtrace(),
+        Command::Info(cmd) => match cmd {
+            InfoCommand::Breakpoints => dbg.print_breakpoints(),
+            InfoCommand::Backtrace => dbg.print_backtrace(),
+        },
         Command::Quit => {
             return;
         }

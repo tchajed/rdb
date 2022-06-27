@@ -489,7 +489,7 @@ impl<'data> Dbg<'data> {
         }
     }
 
-    pub fn backtrace(&self) {
+    pub fn print_backtrace(&self) {
         let mut pc = self.get_offset_pc();
         let mut fp = self.target.getreg(Reg::Rbp).unwrap();
         let mut frame_num = 1;
@@ -499,6 +499,23 @@ impl<'data> Dbg<'data> {
             (fp, pc) = self.get_prev_frame(fp);
             pc -= self.load_addr;
             frame_num += 1;
+        }
+    }
+
+    pub fn print_breakpoints(&self) {
+        let mut bps: Vec<_> = self
+            .breakpoints
+            .values()
+            .filter(|bp| bp.enabled() && bp.source == BreakpointSource::User)
+            .collect();
+        bps.sort_by_key(|bp| bp.addr);
+        for bp in bps.into_iter() {
+            let pc = bp.addr - self.load_addr;
+            let frame = self.info.frame_for_pc(pc).unwrap();
+            let file = frame.file_suffix_or("??");
+            let line = frame.line_or("??");
+            let func = frame.inner_function().unwrap_or(Cow::Borrowed("??"));
+            println!("breakpoint at 0x{pc}: file {file}, line {line} (in {func})");
         }
     }
 
