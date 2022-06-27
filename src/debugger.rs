@@ -309,10 +309,13 @@ impl<'data> Dbg<'data> {
     /// registers.
     pub fn dump_registers(&self) {
         let regs = self.target.getregs().unwrap();
-        let width = ptrace::REGS.iter().map(|r| r.name.len()).max().unwrap();
-        for r in ptrace::REGS.iter() {
-            let val = r.reg.get_reg(&regs);
-            println!("{:width$} 0x{:016x}", r.name, val, width = width);
+        let width = enum_iterator::all::<Reg>()
+            .map(|r| r.name().len())
+            .max()
+            .unwrap();
+        for r in enum_iterator::all::<Reg>() {
+            let val = r.get_reg(&regs);
+            println!("{:width$} 0x{:016x}", r.name(), val, width = width);
         }
     }
 
@@ -443,11 +446,13 @@ impl<'data> Dbg<'data> {
 
     pub fn backtrace(&self) {
         let pc = self.get_offset_pc() - 1;
-        let rule = self
+        let addr = self
             .info
-            .get_unwind_return_address(pc)
+            .get_unwind_return_address(pc, self.target)
             .expect("could not get ra");
-        println!("return address calculation: {:?}", rule);
+        if let Some(addr) = addr {
+            println!("return address: 0x{:x}", addr);
+        }
         eprintln!("actual backtrace not yet implemented");
     }
 

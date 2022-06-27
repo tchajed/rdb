@@ -90,12 +90,20 @@ pub enum Reg {
     Es,
 }
 
+impl Reg {
+    /// Get the lower-case name of the register.
+    pub fn name(&self) -> String {
+        // re-use the Debug instance
+        format!("{:?}", self).to_ascii_lowercase()
+    }
+}
+
 impl TryFrom<&str> for Reg {
     type Error = String;
 
     fn try_from(s: &str) -> std::result::Result<Self, Self::Error> {
         all::<Reg>()
-            .find(|r| format!("{:?}", r).to_ascii_lowercase() == s)
+            .find(|r| r.name() == s)
             .ok_or_else(|| "invalid register name".to_string())
     }
 }
@@ -154,56 +162,7 @@ impl Reg {
     pub fn set_reg(&self, regs: &mut user_regs_struct, val: u64) {
         *self.user_regs_ptr(regs) = val;
     }
-
-    #[allow(dead_code)]
-    pub fn from_dwarf(dwarf_r: usize) -> std::result::Result<Self, String> {
-        REGS.iter()
-            .find(|r| r.dwarf_r == dwarf_r)
-            .map(|r| r.reg)
-            .ok_or_else(|| "invalid dwarf register".to_string())
-    }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegDescriptor {
-    pub reg: Reg,
-    pub dwarf_r: usize,
-    pub name: &'static str,
-}
-
-const fn desc(reg: Reg, dwarf_r: usize, name: &'static str) -> RegDescriptor {
-    RegDescriptor { reg, dwarf_r, name }
-}
-
-pub const REGS: [RegDescriptor; 27] = [
-    desc(Reg::R15, 5, "r15"),
-    desc(Reg::R14, 4, "r14"),
-    desc(Reg::R13, 3, "r13"),
-    desc(Reg::R12, 2, "r12"),
-    desc(Reg::Rbp, 6, "rbp"),
-    desc(Reg::Rbx, 3, "rbx"),
-    desc(Reg::R11, 1, "r11"),
-    desc(Reg::R10, 0, "r10"),
-    desc(Reg::R9, 9, "r9"),
-    desc(Reg::R8, 8, "r8"),
-    desc(Reg::Rax, 0, "rax"),
-    desc(Reg::Rcx, 2, "rcx"),
-    desc(Reg::Rdx, 1, "rdx"),
-    desc(Reg::Rsi, 4, "rsi"),
-    desc(Reg::Rdi, 5, "rdi"),
-    desc(Reg::Orig_rax, 1, "orig_rax"),
-    desc(Reg::Rip, 1, "rip"),
-    desc(Reg::Cs, 1, "cs"),
-    desc(Reg::Rflags, 9, "eflags"),
-    desc(Reg::Rsp, 7, "rsp"),
-    desc(Reg::Ss, 2, "ss"),
-    desc(Reg::Fs_base, 8, "fs_base"),
-    desc(Reg::Gs_base, 9, "gs_base"),
-    desc(Reg::Ds, 3, "ds"),
-    desc(Reg::Es, 0, "es"),
-    desc(Reg::Fs, 4, "fs"),
-    desc(Reg::Gs, 5, "gs"),
-];
 
 type Result<T> = std::result::Result<T, io::Error>;
 

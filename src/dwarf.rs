@@ -12,11 +12,12 @@ use std::{borrow::Cow, fmt, ops::Range, rc::Rc};
 
 use addr2line::Location;
 use gimli::{
-    AttributeValue, BaseAddresses, CfaRule, DebuggingInformationEntry, Dwarf, EhFrame,
-    EndianRcSlice, EndianSlice, LittleEndian, Reader, Register, RegisterRule, Unit, UnwindContext,
-    UnwindSection,
+    AttributeValue, BaseAddresses, DebuggingInformationEntry, Dwarf, EhFrame, EndianRcSlice,
+    EndianSlice, LittleEndian, Reader, Register, Unit, UnwindContext, UnwindSection,
 };
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
+
+pub use self::ret_addr::ReturnAddrRule;
 
 /// Identify the type of a symbol.
 ///
@@ -120,10 +121,103 @@ pub struct DbgInfo<'data> {
     ctx: addr2line::Context<R>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReturnAddrRule<'a> {
-    pub cfa: CfaRule<EndianSlice<'a, LittleEndian>>,
-    pub ra: RegisterRule<EndianSlice<'a, LittleEndian>>,
+mod ret_addr {
+    use gimli::{CfaRule, EndianSlice, LittleEndian, RegisterRule};
+
+    use crate::ptrace::{self, Reg};
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct RegDescriptor {
+        pub reg: Reg,
+        pub dwarf_r: usize,
+    }
+
+    const fn desc(reg: Reg, dwarf_r: usize) -> RegDescriptor {
+        RegDescriptor { reg, dwarf_r }
+    }
+
+    const REGS: [RegDescriptor; 27] = [
+        desc(Reg::R15, 5),
+        desc(Reg::R14, 4),
+        desc(Reg::R13, 3),
+        desc(Reg::R12, 2),
+        desc(Reg::Rbp, 6),
+        desc(Reg::Rbx, 3),
+        desc(Reg::R11, 1),
+        desc(Reg::R10, 0),
+        desc(Reg::R9, 9),
+        desc(Reg::R8, 8),
+        desc(Reg::Rax, 0),
+        desc(Reg::Rcx, 2),
+        desc(Reg::Rdx, 1),
+        desc(Reg::Rsi, 4),
+        desc(Reg::Rdi, 5),
+        desc(Reg::Orig_rax, 1),
+        desc(Reg::Rip, 1),
+        desc(Reg::Cs, 1),
+        desc(Reg::Rflags, 9),
+        desc(Reg::Rsp, 7),
+        desc(Reg::Ss, 2),
+        desc(Reg::Fs_base, 8),
+        desc(Reg::Gs_base, 9),
+        desc(Reg::Ds, 3),
+        desc(Reg::Es, 0),
+        desc(Reg::Fs, 4),
+        desc(Reg::Gs, 5),
+    ];
+
+    fn dwarf_to_reg(dwarf_r: usize) -> Result<Reg, String> {
+        REGS.iter()
+            .find(|r| r.dwarf_r == dwarf_r)
+            .map(|r| r.reg)
+            .ok_or_else(|| "invalid dwarf register".to_string())
+    }
+
+    pub trait ReturnAddrEvaluator {
+        fn get_reg(&self, reg: Reg) -> u64;
+        fn read_mem(&self, addr: u64) -> u64;
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ReturnAddrRule<'a> {
+        pub cfa: CfaRule<EndianSlice<'a, LittleEndian>>,
+        pub ra: RegisterRule<EndianSlice<'a, LittleEndian>>,
+    }
+
+    impl ReturnAddrRule<'_> {
+        pub fn evaluate<E: ReturnAddrEvaluator>(&self, eval: E) -> u64 {
+            let cfa: u64 = match self.cfa {
+                CfaRule::RegisterAndOffset { register, offset } => {
+                    let reg = dwarf_to_reg(register.0 as usize).expect("unexpected dwarf register");
+                    ((eval.get_reg(reg) as i64) + offset) as u64
+                }
+                CfaRule::Expression(_) => unimplemented!("evaluating dwarf expressions for unwind"),
+            };
+            match self.ra {
+                RegisterRule::Offset(n) => {
+                    let a = (cfa as i64 + n) as u64;
+                    eval.read_mem(a)
+                }
+                RegisterRule::ValOffset(n) => (cfa as i64 + n) as u64,
+                RegisterRule::Register(r) => {
+                    let reg = dwarf_to_reg(r.0 as usize).expect("unexpected dwarf register");
+                    eval.get_reg(reg)
+                }
+                _ => unimplemented!("unsupported register rule {:?}", self.ra),
+            }
+        }
+    }
+
+    impl ReturnAddrEvaluator for ptrace::Target {
+        fn get_reg(&self, reg: Reg) -> u64 {
+            self.getreg(reg).expect("could not get register")
+        }
+
+        fn read_mem(&self, addr: u64) -> u64 {
+            self.peekdata(addr)
+                .unwrap_or_else(|_| panic!("could not read mem at 0x{:x}", addr))
+        }
+    }
 }
 
 impl<'data> DbgInfo<'data> {
@@ -309,7 +403,11 @@ impl<'data> DbgInfo<'data> {
     /// Get the debug info on the return address from a particular pc.
     ///
     /// Returns only the information on how to get the return address, not the actual value.
-    pub fn get_unwind_return_address(&self, pc: u64) -> gimli::Result<Option<ReturnAddrRule>> {
+    pub fn get_unwind_return_address(
+        &self,
+        pc: u64,
+        eval: impl ret_addr::ReturnAddrEvaluator,
+    ) -> gimli::Result<Option<u64>> {
         let eh_frame = self.eh_frame();
         let bases = BaseAddresses::default().set_eh_frame(self.unwind.addr);
         let mut ctx = UnwindContext::new();
@@ -326,9 +424,10 @@ impl<'data> DbgInfo<'data> {
         let cfa = info.cfa();
         // 16 is the return address dwarf register number (at least for x86-64)
         let ra = info.register(Register(16));
-        Ok(Some(ReturnAddrRule {
+        let rule = ReturnAddrRule {
             cfa: cfa.clone(),
             ra,
-        }))
+        };
+        Ok(Some(rule.evaluate(eval)))
     }
 }
