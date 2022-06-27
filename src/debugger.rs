@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, BufRead},
+    path::Path,
 };
 
 use addr2line::Location;
@@ -231,13 +232,32 @@ impl<'data> Dbg<'data> {
         Ok(())
     }
 
+    fn string_path_file_name(path: &str) -> &str {
+        let path = Path::new(path);
+        let name = path.file_name().unwrap();
+        name.to_str().unwrap()
+    }
+
     /// Set a breakpoint based on address
     ///
     /// The pc here is an offset into the binary, not the actual program counter
     /// (which will be offset by the load address).
     pub fn set_user_breakpoint(&mut self, pc: u64) {
-        // for now user breakpoints are not distinguished from internal ones
         self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
+        if let Ok(Some(source)) = self.info.source_for_pc(pc) {
+            let file = match source.file {
+                None => return,
+                Some(path) => Self::string_path_file_name(path),
+            };
+            let line = source.line.unwrap();
+            let func_info = match self.info.function_for_pc(pc) {
+                Ok(Some(func)) => {
+                    format!(" (in {})", func)
+                }
+                _ => "".to_string(),
+            };
+            println!("set breakpoint at 0x{pc:x}: file {file}, line {line}{func_info}",);
+        }
     }
 
     /// internal method to add a breakpoint
@@ -262,7 +282,7 @@ impl<'data> Dbg<'data> {
             .pc_for_source_loc(|path| path.ends_with(file), line)
             .expect("could not lookup source")
         {
-            self.set_breakpoint_at_address(self.load_addr + pc, BreakpointSource::User);
+            self.set_user_breakpoint(pc);
         } else {
             eprintln!("could not find {}:{}", file, line);
         }
@@ -279,7 +299,7 @@ impl<'data> Dbg<'data> {
             Some(pc) => {
                 let lines = self.info.function_lines_from_pc(pc).unwrap();
                 let begin = if lines.len() > 1 { lines[1] } else { lines[0] };
-                self.set_breakpoint_at_address(self.load_addr + begin, BreakpointSource::User);
+                self.set_user_breakpoint(begin);
             }
         }
     }

@@ -313,6 +313,16 @@ impl<'data> DbgInfo<'data> {
         self.ctx.find_location(pc)
     }
 
+    pub fn function_for_pc(&self, pc: u64) -> Result<Option<String>, gimli::Error> {
+        let frame = self.ctx.find_frames(pc)?.next()?.unwrap();
+        let f = match frame.function {
+            Some(f) => f,
+            None => return Ok(None),
+        };
+        let name = f.name.to_string_lossy()?;
+        Ok(Some(name.to_string()))
+    }
+
     pub fn pc_for_function_pred<F>(&self, pred: F) -> Result<Option<u64>, gimli::Error>
     where
         F: for<'a> Fn(&'a str) -> bool,
