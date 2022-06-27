@@ -21,8 +21,9 @@ $ cargo build
 $ ./target/debug/rdb ./target/debug/test
 debugging pid 262691
 rdb> break use_vars
+set breakpoint at 0x7b88: file src/bin/test.rs, line 10 (in use_vars)
 rdb> continue
-hit breakpoint 0x79e8
+hit breakpoint 0x7b88
 /home/tchajed/rdb/src/bin/test.rs:
    fn use_vars() {
 >      let mut a: u64 = 3;
@@ -45,4 +46,5 @@ rdb> step
 rdb> continue
 Hello, world
 program exited
+rdb> quit
 ```
