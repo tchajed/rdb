@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, BufRead},
-    path::Path,
 };
 
 use addr2line::Location;
@@ -232,12 +231,6 @@ impl<'data> Dbg<'data> {
         Ok(())
     }
 
-    fn string_path_file_name(path: &str) -> &str {
-        let path = Path::new(path);
-        let name = path.file_name().unwrap();
-        name.to_str().unwrap()
-    }
-
     /// Set a breakpoint based on address
     ///
     /// The pc here is an offset into the binary, not the actual program counter
@@ -247,7 +240,13 @@ impl<'data> Dbg<'data> {
         if let Ok(Some(source)) = self.info.source_for_pc(pc) {
             let file = match source.file {
                 None => return,
-                Some(path) => Self::string_path_file_name(path),
+                Some(path) => {
+                    if let Some(dir) = self.info.compilation_dir(pc) {
+                        path.strip_prefix(&format!("{dir}/")).unwrap_or(path)
+                    } else {
+                        path
+                    }
+                }
             };
             let line = source.line.unwrap();
             let func_info = match self.info.function_for_pc(pc) {

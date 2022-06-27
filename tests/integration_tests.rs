@@ -122,3 +122,11 @@ fn test_symbol_lookup() {
     let out = run_rdb(&["symbol use_vars", "quit"]);
     assert!(out.contains("func use_vars"));
 }
+
+#[test]
+fn test_breakpoint_info() {
+    let out = run_rdb(&["break greeting", "q"]);
+    assert!(out.contains("set breakpoint"));
+    assert!(out.contains("file src/bin/test.rs"));
+    assert!(out.contains("line 5"));
+}

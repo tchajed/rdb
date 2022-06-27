@@ -313,6 +313,15 @@ impl<'data> DbgInfo<'data> {
         self.ctx.find_location(pc)
     }
 
+    pub fn compilation_dir(&self, pc: u64) -> Option<String> {
+        self.ctx.find_dwarf_unit(pc).and_then(|unit| {
+            unit.comp_dir.as_ref().map(|dir| {
+                let dir = dir.to_string().unwrap();
+                dir.to_string()
+            })
+        })
+    }
+
     pub fn function_for_pc(&self, pc: u64) -> Result<Option<String>, gimli::Error> {
         let frame = self.ctx.find_frames(pc)?.next()?.unwrap();
         let f = match frame.function {
