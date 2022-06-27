@@ -58,8 +58,10 @@ impl BreakpointLoc {
 #[derive(Subcommand)]
 pub enum Command {
     /// continue executing target
+    #[clap(aliases = &["cont", "c"])]
     Continue,
     /// set a breakpoint
+    #[clap(aliases = &["b", "br"])]
     Break {
         #[clap(value_parser = BreakpointLoc::parse)]
         loc: BreakpointLoc,
@@ -71,12 +73,14 @@ pub enum Command {
     },
     /// interact with registers
     #[clap(subcommand)]
+    #[clap(alias = "reg")]
     Register(RegisterCommand),
     /// step over a single instruction
     Stepi,
     /// step out of the current function
     Finish,
     /// step into the next function
+    #[clap(alias = "s")]
     Step,
     /// step over the next source line
     Next,
@@ -86,10 +90,13 @@ pub enum Command {
         name: String,
     },
     /// print a backtrace
+    #[clap(alias = "bt")]
     Backtrace,
     /// exit debugger
+    #[clap(alias = "q")]
     Quit,
     /// print help message
+    #[clap(alias = "h")]
     Help,
 }
 
