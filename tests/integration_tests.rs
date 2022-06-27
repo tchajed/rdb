@@ -26,6 +26,7 @@ fn spawn_rdb() -> Child {
         .arg(exe_path("test"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("failed to launch debugger")
 }
@@ -45,32 +46,32 @@ fn run_rdb(lines: &[&str]) -> String {
 }
 
 #[test]
-fn test_continue() {
+fn continue_command() {
     let out = run_rdb(&["continue", "quit"]);
     assert!(out.contains("Hello, world"), "target output did not appear");
     assert!(out.contains("program exited"), "target didn't terminate");
 }
 
 #[test]
-fn test_quit() {
+fn quit() {
     let out = run_rdb(&["quit"]);
     assert!(!out.contains("Hello, world"), "target should not have run");
 }
 
 #[test]
-fn test_help() {
+fn help() {
     let out = run_rdb(&["help", "quit"]);
     assert!(out.contains("SUBCOMMANDS:"));
 }
 
 #[test]
-fn test_dump() {
+fn dump() {
     let out = run_rdb(&["register dump", "quit"]);
     assert!(out.contains("rip"));
 }
 
 #[test]
-fn test_eof() {
+fn eof() {
     let mut cmd = spawn_rdb();
     let stdin = cmd.stdin.take().expect("couldn't get stdin");
     // equivalent to sending EOF (ctrl-d)
@@ -82,49 +83,49 @@ fn test_eof() {
 }
 
 #[test]
-fn test_single_stepping() {
+fn single_stepping() {
     run_rdb(&["stepi", "stepi", "stepi", "quit"]);
 }
 
 #[test]
-fn test_step_out_main() {
+fn step_out_main() {
     // at the very beginning finish should return from main
     let out = run_rdb(&["finish"]);
     assert!(out.contains("program exited"));
 }
 
 #[test]
-fn test_function_breakpoint() {
+fn function_breakpoint() {
     let out = run_rdb(&["break use_vars", "continue", "next", "quit"]);
     assert!(out.contains(">      let mut b: u64 = 2;"));
 }
 
 #[test]
-fn test_function_finish() {
+fn function_finish() {
     let out = run_rdb(&["break use_vars", "continue", "next", "finish", "quit"]);
     assert!(out.contains(">      greeting();"));
 }
 
 #[test]
-fn test_function_step_in() {
+fn function_step_in() {
     let out = run_rdb(&["break use_vars", "continue", "finish", "step", "quit"]);
     assert!(out.contains("fn greeting()"));
 }
 
 #[test]
-fn test_source_line() {
+fn source_line() {
     let out = run_rdb(&["break test.rs:12", "continue", "continue", "quit"]);
     assert!(out.contains(">      let c = a + b"));
 }
 
 #[test]
-fn test_symbol_lookup() {
+fn symbol_lookup() {
     let out = run_rdb(&["symbol use_vars", "quit"]);
     assert!(out.contains("func use_vars"));
 }
 
 #[test]
-fn test_breakpoint_info() {
+fn breakpoint_info() {
     let out = run_rdb(&["break greeting", "q"]);
     assert!(out.contains("set breakpoint"));
     assert!(out.contains("file src/bin/test.rs"));
