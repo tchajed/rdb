@@ -12,7 +12,9 @@ use std::{borrow::Cow, fmt, ops::Range, rc::Rc};
 
 use addr2line::Location;
 use gimli::{
-    AttributeValue, DebuggingInformationEntry, Dwarf, EndianRcSlice, LittleEndian, Reader, Unit,
+    AttributeValue, BaseAddresses, CfaRule, DebuggingInformationEntry, Dwarf, EhFrame,
+    EndianRcSlice, EndianSlice, LittleEndian, Reader, Register, RegisterRule, Unit, UnwindContext,
+    UnwindSection,
 };
 use object::{Object, ObjectSection, ObjectSymbol, SymbolKind};
 
@@ -105,11 +107,23 @@ fn at_pc_range(die: &Die<impl gimli::Reader>) -> gimli::Result<Range<u64>> {
 // the gimli::Reader we use
 type R = EndianRcSlice<LittleEndian>;
 
+struct UnwindInfo {
+    addr: u64,
+    eh_data: Vec<u8>,
+}
+
 pub struct DbgInfo<'data> {
     /// underlying object file
     file: object::File<'data>,
+    unwind: UnwindInfo,
     /// context for doing offset -> source lookups
     ctx: addr2line::Context<R>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReturnAddrRule<'a> {
+    pub cfa: CfaRule<EndianSlice<'a, LittleEndian>>,
+    pub ra: RegisterRule<EndianSlice<'a, LittleEndian>>,
 }
 
 impl<'data> DbgInfo<'data> {
@@ -128,11 +142,32 @@ impl<'data> DbgInfo<'data> {
         // Load all of the sections.
         let dwarf = gimli::Dwarf::load(&load_section)?;
         let ctx = addr2line::Context::from_dwarf(dwarf)?;
-        Ok(Self { file, ctx })
+        let (eh_frame_addr, eh_frame_data) = file
+            .section_by_name(gimli::SectionId::EhFrame.name())
+            .and_then(|section| {
+                let addr = section.address();
+                section
+                    .uncompressed_data()
+                    .ok()
+                    .map(|data| (addr, data.to_vec()))
+            })
+            .unwrap_or_default();
+        Ok(Self {
+            file,
+            unwind: UnwindInfo {
+                addr: eh_frame_addr,
+                eh_data: eh_frame_data,
+            },
+            ctx,
+        })
     }
 
     fn dwarf(&self) -> &Dwarf<R> {
         self.ctx.dwarf()
+    }
+
+    fn eh_frame(&self) -> EhFrame<EndianSlice<'_, LittleEndian>> {
+        EhFrame::new(&self.unwind.eh_data, LittleEndian)
     }
 
     fn at_name<'a>(&self, unit: &'a Unit<R>, die: &'a Die<R>) -> gimli::Result<Option<R>> {
@@ -269,5 +304,31 @@ impl<'data> DbgInfo<'data> {
                 })
             })
             .collect()
+    }
+
+    /// Get the debug info on the return address from a particular pc.
+    ///
+    /// Returns only the information on how to get the return address, not the actual value.
+    pub fn get_unwind_return_address(&self, pc: u64) -> gimli::Result<Option<ReturnAddrRule>> {
+        let eh_frame = self.eh_frame();
+        let bases = BaseAddresses::default().set_eh_frame(self.unwind.addr);
+        let mut ctx = UnwindContext::new();
+        let info = match eh_frame.unwind_info_for_address(
+            &bases,
+            &mut ctx,
+            pc,
+            EhFrame::cie_from_offset,
+        ) {
+            Ok(info) => info,
+            Err(gimli::Error::NoUnwindInfoForAddress) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        let cfa = info.cfa();
+        // 16 is the return address dwarf register number (at least for x86-64)
+        let ra = info.register(Register(16));
+        Ok(Some(ReturnAddrRule {
+            cfa: cfa.clone(),
+            ra,
+        }))
     }
 }

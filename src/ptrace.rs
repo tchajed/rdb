@@ -1,3 +1,4 @@
+use enum_iterator::{all, Sequence};
 use std::{fmt::Display, io, mem::MaybeUninit};
 
 use libc::{c_long, c_uint, pid_t, user_regs_struct};
@@ -57,7 +58,7 @@ impl From<libc::c_int> for WaitStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence)]
 #[allow(non_camel_case_types)]
 pub enum Reg {
     Rax,
@@ -93,10 +94,22 @@ impl TryFrom<&str> for Reg {
     type Error = String;
 
     fn try_from(s: &str) -> std::result::Result<Self, Self::Error> {
-        REGS.iter()
-            .find(|r| r.name == s)
-            .map(|r| r.reg)
+        all::<Reg>()
+            .find(|r| format!("{:?}", r).to_ascii_lowercase() == s)
             .ok_or_else(|| "invalid register name".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Reg;
+
+    #[test]
+    fn test_register_parse() {
+        assert_eq!(Ok(Reg::Rbp), Reg::try_from("rbp"));
+        assert_eq!(Ok(Reg::Orig_rax), Reg::try_from("orig_rax"));
+        assert!(Reg::try_from("Rax").is_err());
+        assert!(Reg::try_from("ebp").is_err());
     }
 }
 

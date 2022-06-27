@@ -85,6 +85,8 @@ pub enum Command {
         #[clap(value_parser)]
         name: String,
     },
+    /// print a backtrace
+    Backtrace,
     /// exit debugger
     Quit,
     /// print help message

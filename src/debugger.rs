@@ -441,6 +441,16 @@ impl<'data> Dbg<'data> {
         self.info.lookup_symbol(name)
     }
 
+    pub fn backtrace(&self) {
+        let pc = self.get_offset_pc() - 1;
+        let rule = self
+            .info
+            .get_unwind_return_address(pc)
+            .expect("could not get ra");
+        println!("return address calculation: {:?}", rule);
+        eprintln!("actual backtrace not yet implemented");
+    }
+
     /// Get the pid of the target being debugged.
     pub fn target_pid(&self) -> pid_t {
         self.target.pid()

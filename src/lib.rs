@@ -40,13 +40,14 @@ fn handle_command(dbg: &mut Dbg, cmd: cli::Command) {
         Command::Stepi => dbg.single_step(),
         Command::Finish => dbg.step_out(),
         Command::Step => dbg.step_in(),
+        Command::Next => dbg.step_over(),
         Command::Symbol { name } => {
             let matches = dbg.lookup_symbol(&name);
             for sym in matches.into_iter() {
                 println!("{} {} 0x{:x}", sym.type_, sym.name, sym.addr);
             }
         }
-        Command::Next => dbg.step_over(),
+        Command::Backtrace => dbg.backtrace(),
         Command::Quit => {
             return;
         }
