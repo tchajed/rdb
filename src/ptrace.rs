@@ -3,17 +3,8 @@ use std::{fmt::Display, io, mem::MaybeUninit};
 
 use libc::{c_long, c_uint, pid_t, user_regs_struct};
 
-const TRACEME: c_uint = 0;
-const PEEKDATA: c_uint = 2;
-const POKEDATA: c_uint = 5;
-const CONT: c_uint = 7;
-const SINGLESTEP: c_uint = 9;
-const GETREGS: c_uint = 12;
-const SETREGS: c_uint = 13;
-const GETSIGINFO: c_uint = 0x4202;
-
 pub fn trace_me() {
-    unsafe { libc::ptrace(TRACEME) };
+    unsafe { libc::ptrace(libc::PTRACE_TRACEME) };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,14 +196,14 @@ impl Target {
     }
 
     pub fn cont(&self, signal: c_uint) -> Result<()> {
-        self.ptrace(CONT, 0, signal as usize)
+        self.ptrace(libc::PTRACE_CONT, 0, signal as usize)
     }
 
     pub fn peekdata(&self, addr: u64) -> Result<u64> {
         // need to do everything manually since the return value does not signal
         // errno (it could be -1 as actual data)
         clear_errno();
-        let data = unsafe { libc::ptrace(PEEKDATA, self.0, addr) as u64 };
+        let data = unsafe { libc::ptrace(libc::PTRACE_PEEKDATA, self.0, addr) as u64 };
         let err = get_errno();
         if err < 0 {
             return Err(io::Error::from_raw_os_error(err));
@@ -221,7 +212,7 @@ impl Target {
     }
 
     pub fn pokedata(&self, addr: u64, data: u64) -> Result<()> {
-        self.ptrace(POKEDATA, addr as usize, data as usize)
+        self.ptrace(libc::PTRACE_POKEDATA, addr as usize, data as usize)
     }
 
     pub fn wait(&self) -> Result<WaitStatus> {
@@ -234,7 +225,7 @@ impl Target {
     pub fn getregs(&self) -> Result<user_regs_struct> {
         let mut regs = MaybeUninit::<user_regs_struct>::uninit();
         let data = regs.as_mut_ptr() as usize;
-        self.ptrace(GETREGS, 0 /* addr is ignored */, data)?;
+        self.ptrace(libc::PTRACE_GETREGS, 0 /* addr is ignored */, data)?;
         unsafe { Ok(regs.assume_init()) }
     }
 
@@ -245,7 +236,7 @@ impl Target {
 
     fn setregs(&self, regs: &user_regs_struct) -> Result<()> {
         let data = regs as *const user_regs_struct as usize;
-        self.ptrace(SETREGS, 0 /* addr is ignored  */, data)
+        self.ptrace(libc::PTRACE_SETREGS, 0 /* addr is ignored  */, data)
     }
 
     pub fn setreg(&self, r: Reg, val: u64) -> Result<()> {
@@ -255,13 +246,17 @@ impl Target {
     }
 
     pub fn singlestep(&self) -> Result<()> {
-        self.ptrace(SINGLESTEP, 0 /* ignored */, 0 /* ignored */)
+        self.ptrace(
+            libc::PTRACE_SINGLESTEP,
+            0, /* ignored */
+            0, /* ignored */
+        )
     }
 
     pub fn getsiginfo(&self) -> Result<libc::siginfo_t> {
         let mut info = MaybeUninit::<libc::siginfo_t>::uninit();
         let data = info.as_mut_ptr() as usize;
-        self.ptrace(GETSIGINFO, 0 /* addr is ignored */, data)?;
+        self.ptrace(libc::PTRACE_GETSIGINFO, 0 /* addr is ignored */, data)?;
         unsafe { Ok(info.assume_init()) }
     }
 }
